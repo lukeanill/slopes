@@ -9,10 +9,14 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
     "vite": "^8.2.0"
   },
   "dependencies": {
-    "@clerk/clerk-js": "^6.29.3",
-    "mapbox-gl": "^3.29.0"
+    "@lukeanill/ui": "^2.0.0",
+    "lucide-react": "^0.469.0",
+    "mapbox-gl": "^3.29.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }

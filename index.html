@@ -7,33 +7,7 @@
   <title>US Slope Map</title>
 </head>
 <body>
-  <div id="auth-gate">
-    <div id="auth-card">
-      <h1>US Slope Map</h1>
-      <p class="sub">Sign in to view live slope data.</p>
-      <div id="clerk-auth"></div>
-    </div>
-  </div>
-
-  <div id="app" hidden>
-    <div id="user-button"></div>
-    <div id="map"></div>
-
-    <div id="bottom-bar">
-      <div id="gradient-wrap">
-        <div id="gradient-bar"></div>
-        <div id="gradient-tooltip"></div>
-      </div>
-      <div id="status">Zoom in to get Slopes</div>
-      <div id="controls">
-        <button id="zoom-in" class="icon-btn" type="button" aria-label="Zoom in"></button>
-        <button id="zoom-out" class="icon-btn" type="button" aria-label="Zoom out"></button>
-        <button id="reset-bearing" class="icon-btn" type="button" aria-label="Reset bearing"></button>
-        <button id="reset-view" class="icon-btn" type="button" aria-label="Reset view"></button>
-      </div>
-    </div>
-  </div>
-
-  <script type="module" src="/src/main.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
