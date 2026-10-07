@@ -87,7 +87,7 @@ export default function SlopeDistributionChart({ samples = [], onHover }) {
           />
         );
       })}
-      <path d={path} fill="none" stroke="#ffffff" strokeWidth="1.5" opacity="0.85" />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.85" vectorEffect="non-scaling-stroke" />
     </svg>
   );
 }

@@ -25,40 +25,6 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 100%);
 }
 
-.address-search { position: fixed; left: 16px; bottom: 16px; z-index: 6; }
-.address-search-shell { position: relative; display: flex; align-items: center; gap: 8px; }
-.address-search-pill {
-  height: 44px; display: flex; align-items: center; overflow: hidden; border-radius: 999px;
-  background: rgba(5, 5, 5, 0.3); border: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); color: #ffffff; backdrop-filter: blur(10px);
-}
-.address-search-pill-inner {
-  position: relative; display: flex; align-items: center; width: 100%; height: 100%; padding: 0 14px; gap: 8px;
-}
-.address-search-pill-inner input {
-  flex: 1; border: none; background: transparent; outline: none; color: #ffffff;
-  font-family: 'DM Sans', sans-serif; font-size: 14px;
-}
-.address-search-pill-inner input::placeholder { color: rgba(255, 255, 255, 0.5); }
-.address-search-hit { position: absolute; inset: 0; background: none; border: none; cursor: pointer; }
-.address-search-close {
-  width: 44px; height: 44px; border-radius: 999px; display: flex; align-items: center; justify-content: center;
-  background: rgba(5, 5, 5, 0.3); border: none; color: #ffffff; cursor: pointer;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); backdrop-filter: blur(10px);
-}
-.address-search-suggestions {
-  position: absolute; bottom: calc(100% + 8px); left: 0;
-  list-style: none; margin: 0; padding: 6px; width: 320px; max-width: calc(100vw - 32px); border-radius: 16px;
-  background: rgba(5, 5, 5, 0.5); border: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); backdrop-filter: blur(10px);
-}
-.address-search-suggestions li button {
-  display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 10px;
-  background: none; border: none; color: #ffffff; font-family: 'DM Sans', sans-serif; font-size: 13px;
-  cursor: pointer;
-}
-.address-search-suggestions li button:hover { background: rgba(255, 255, 255, 0.1); }
-
 #map-controls {
   position: fixed; right: 20px; bottom: 24px; z-index: 6;
   display: flex; flex-direction: column; align-items: center; gap: 8px; width: 40px;
@@ -85,10 +51,10 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 .map-control-btn-bottom { border-radius: 0 0 999px 999px; }
 
 .zoom-status-pill {
-  position: fixed; left: 50%; bottom: 24px; z-index: 6;
-  transform: translateX(-50%) translateY(8px);
+  position: fixed; left: 50%; top: 16px; z-index: 6; /* top center, in line with search and About */
+  transform: translateX(-50%) translateY(-8px);
   opacity: 0; pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 0.25s ease, transform 0.25s ease, translate 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   display: flex; align-items: center; justify-content: center;
   padding: 10px 18px; border-radius: 999px;
   background: rgba(5, 5, 5, 0.3); backdrop-filter: blur(10px);
@@ -159,49 +125,7 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 }
 #gradient-tooltip.visible { opacity: 1; }
 
-.parcel-popover {
-  width: 260px;
-  padding: 12px !important;
-  background: #1c1f2e;
-  color: #eef1f6;
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.parcel-chart-wrap { margin-bottom: 18px; }
-
-.slope-distribution-svg { display: block; width: 100%; height: 90px; }
-
-@keyframes skeleton-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.9; } }
-.skeleton { display: inline-block; background: rgba(255, 255, 255, 0.15); border-radius: 4px; animation: skeleton-pulse 1.2s ease-in-out infinite; }
-.skeleton-text { width: 100px; height: 12px; }
-
-.parcel-address {
-  font-family: 'Overpass', 'DM Sans', sans-serif; font-weight: 500; font-size: 17px;
-  line-height: 1.25; text-align: center; margin: 0 0 6px;
-}
-
-.parcel-summary-badge {
-  display: table; margin: 0 auto 8px; padding: 2px 10px; border-radius: 999px;
-  font-size: 12px; font-weight: 600; color: #ffffff; text-transform: capitalize;
-}
-
-.parcel-stats-row {
-  display: flex; justify-content: center; gap: 36px; text-align: center;
-  margin-bottom: 12px;
-}
-.parcel-stat { display: flex; flex-direction: column; gap: 1px; }
-.parcel-stat-value { font-size: 17px; font-weight: 700; }
-.parcel-stat-degrees { font-size: 11px; color: rgba(255, 255, 255, 0.5); }
-
-.parcel-label { color: rgba(255, 255, 255, 0.55); font-size: 11px; font-weight: 400; margin-right: 4px; }
-
-.parcel-info-row { display: flex; justify-content: center; gap: 4px; font-size: 12px; margin-bottom: 2px; }
-
-.parcel-zone-link {
-  display: inline-flex; align-items: center; gap: 4px;
-  color: inherit; text-decoration: none; font-weight: 500;
-}
-.parcel-zone-link:hover { text-decoration: underline; }
+.slope-distribution-svg { display: block; width: 100%; height: 150px; }
 
 #controls {
   justify-self: end; display: flex; align-items: center; gap: 8px;
@@ -216,3 +140,32 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 .icon-btn svg { width: 28px; height: 28px; display: block; }
 
 .cl-headerTitle { color: #000 !important; }
+
+/* While search, the parcel sheet or About is open, the other controls step aside toward their nearest
+   edge so that surface has the stage. Uses the standalone `translate` property so it never fights
+   the `transform` these elements already animate. They return with a short delay, after the
+   search/sheet has started leaving. */
+#map-controls,
+.about-button,
+.search-control {
+  transition: opacity 0.2s ease 0.12s, translate 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.12s,
+    filter 0.2s ease 0.12s, background-color 0.15s ease;
+}
+#app:is([data-search-open], [data-sheet-open]) :is(#map-controls, .about-button, .zoom-status-pill),
+#app:is([data-sheet-open], [data-about-open]) .search-control,
+#app[data-about-open] :is(#map-controls, .zoom-status-pill) {
+  opacity: 0; filter: blur(4px); pointer-events: none;
+  transition-delay: 0s;
+}
+#app:is([data-search-open], [data-sheet-open], [data-about-open]) #map-controls { translate: 16px 0; }
+#app:is([data-search-open], [data-sheet-open], [data-about-open]) .zoom-status-pill,
+#app:is([data-search-open], [data-sheet-open]) .about-button,
+#app:is([data-sheet-open], [data-about-open]) .search-control { translate: 0 -12px; }
+
+/* The design system Sheet's backdrop is a heavy black scrim with blur; match the About overlay's
+   light scrim instead so the map stays visible around the floating glass sheet. (Unlayered CSS
+   wins over the Tailwind utility layer.) */
+[data-slot="sheet-overlay"] {
+  background-color: rgba(4, 4, 4, 0.12);
+  backdrop-filter: none;
+}

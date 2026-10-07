@@ -10,12 +10,13 @@ import iconCrosshairSimple from './icons/CrosshairSimple.svg?raw';
 // it up on unmount and clear a parcel selection from React.
 // onSlopeHover(info | null) fires as the cursor moves over the slope layer, with
 // info = { x, y, percent, degrees } in map-container pixel coordinates.
-// onParcelSelect(info | null) fires when a parcel is clicked (info = { ain, address, stats,
+// onParcelSelect(info | null) fires when a parcel is clicked (info = { ain, address, stats, center,
 // zoning, zoningLoading }, called again once zoning resolves) or deselected (null).
+// onParcelError() fires when LA County's parcel lines fail to load or time out.
 // onStatusChange(info | null) fires with { kind: 'prompt', text } when zoomed out too far to
 // render slope, { kind: 'loading', label } while fetching/rendering/finishing a new tile grid,
 // or null once idle (nothing to show).
-export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = {}) {
+export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onParcelError } = {}) {
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   const els = {
     zoomLevel: document.getElementById('zoom-level'),
@@ -541,8 +542,12 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = 
   // County, which is fine since the default camera (and this app's focus) sits inside it.
   const PARCEL_URL =
     'https://public.gis.lacounty.gov/public/rest/services/LACounty_Cache/LACounty_Parcel/MapServer/0/query';
+  // LA County retired its LACounty_Dynamic/Zoning service (it now answers "service not found"),
+  // and the county's own replacement only covers unincorporated areas. SCAG's regional parcel
+  // zoning layer covers every city in the county, keyed by the same APN/AIN, with each city's
+  // own zone code (ZN24_CITY) — and it allows cross-origin requests from the browser.
   const ZONING_URL =
-    'https://public.gis.lacounty.gov/public/rest/services/LACounty_Dynamic/Zoning/MapServer/0/query';
+    'https://maps.scag.ca.gov/scaggis/rest/services/LDX/Zoning_poly_LA/MapServer/0/query';
   const PARCEL_SRC_ID = 'parcels-src';
   const PARCEL_LAYER_ID = 'parcels';
   const PARCEL_HIT_LAYER_ID = 'parcels-hit'; // invisible fill — the visible layer is just a line, which only hit-tests along the thin boundary stroke, not the parcel's interior
@@ -567,12 +572,21 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = 
         id: PARCEL_LAYER_ID,
         type: 'line',
         source: PARCEL_SRC_ID,
-        paint: { 'line-color': 'rgba(255, 255, 255, 0.55)', 'line-width': 1, 'line-dasharray': [2, 2] },
+        // Tightly dashed and zoom-scaled so lot lines read clearly over the slope colors without
+        // competing with them; emissive so the Standard style's 'night' lighting doesn't dim them
+        // like it does the basemap. (Dash lengths are in multiples of the line width.)
+        paint: {
+          'line-color': 'rgba(255, 255, 255, 0.7)',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 16, 1, 18, 1.75, 20, 2.5],
+          'line-dasharray': [2, 1.5],
+          'line-emissive-strength': 1,
+        },
       });
     }
   }
 
   let parcelFetchToken = 0;
+  const PARCEL_TIMEOUT_MS = 12000;
   let parcelRefreshTimer = null;
   function scheduleParcelRefresh(delay = 500) {
     clearTimeout(parcelRefreshTimer);
@@ -596,14 +610,24 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = 
       outFields: 'AIN,SitusFullAddress',
       returnGeometry: 'true',
     });
+    // The county's query endpoint can stall for a minute and then return an error page (seen in
+    // practice), so give up after PARCEL_TIMEOUT_MS and tell the user rather than leaving them
+    // waiting on parcel lines that never appear.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PARCEL_TIMEOUT_MS);
     try {
-      const res = await fetch(`${PARCEL_URL}?${params}`);
+      const res = await fetch(`${PARCEL_URL}?${params}`, { signal: controller.signal });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const fc = await res.json();
       if (myToken !== parcelFetchToken) return;
+      if (fc.error) throw new Error(fc.error.message ?? 'Parcel query error');
       map.getSource(PARCEL_SRC_ID)?.setData(fc);
     } catch (err) {
+      if (myToken !== parcelFetchToken || removed) return; // superseded by a newer request
       console.error('Parcel fetch failed', err);
+      onParcelError?.();
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -738,7 +762,8 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = 
       if (count > modeCount) { modeCount = count; modePercent = bin; }
     }
     const { label: summaryLabel, color: summaryColor } = summaryForPercent(maxPercent);
-    return { sampleCount: samples.length, samples, minPercent, maxPercent, modePercent, summaryLabel, summaryColor };
+    const modeColor = summaryForPercent(modePercent).color; // band color of the most common slope
+    return { sampleCount: samples.length, samples, minPercent, maxPercent, modePercent, modeColor, summaryLabel, summaryColor };
   }
 
   function ringToAnchorRect(ring) {
@@ -762,7 +787,9 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = 
     onParcelSelect?.(null);
   }
 
-  async function selectParcel(feature) {
+  // `reveal` (optional) is awaited after the highlight is drawn but before the sheet is told to
+  // open — so the camera can finish moving to the parcel first.
+  async function selectParcel(feature, reveal) {
     const ain = feature.properties?.AIN ?? null;
     selectedAin = ain;
     const geom = { type: 'Feature', properties: {}, geometry: feature.geometry };
@@ -774,41 +801,55 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = 
       : feature.geometry.coordinates[0][0];
     const stats = computeParcelStats(ring);
     const anchorRect = ringToAnchorRect(ring);
+    // Bounding-box midpoint — where a "recent parcels" card flies back to.
+    const lngs = ring.map((p) => p[0]), lats = ring.map((p) => p[1]);
+    const center = [(Math.min(...lngs) + Math.max(...lngs)) / 2, (Math.min(...lats) + Math.max(...lats)) / 2];
     const address = feature.properties?.SitusFullAddress ?? null;
 
-    onParcelSelect?.({ ain, address, stats, anchorRect, zoning: null, zoningLoading: true });
+    if (reveal) await reveal;
+    if (selectedAin !== ain) return; // another parcel was clicked while the camera was moving
+    onParcelSelect?.({ ain, address, stats, anchorRect, center, zoning: null, zoningLoading: true });
 
     if (ain == null) {
-      onParcelSelect?.({ ain, address, stats, anchorRect, zoning: null, zoningLoading: false });
+      onParcelSelect?.({ ain, address, stats, anchorRect, center, zoning: null, zoningLoading: false });
       return;
     }
     try {
       const params = new URLSearchParams({
-        f: 'json', where: `AIN=${ain}`, outFields: 'ZONE_CMPLT,TOOLTIP,ZONING_DESCRIPTION', returnGeometry: 'false',
+        f: 'json', where: `APN24='${ain}'`, outFields: 'ZN24_CITY,CITY', returnGeometry: 'false',
       });
       const res = await fetch(`${ZONING_URL}?${params}`);
       const json = await res.json();
-      const zoning = json?.features?.[0]?.attributes ?? null;
-      if (selectedAin === ain) onParcelSelect?.({ ain, address, stats, anchorRect, zoning, zoningLoading: false });
+      const attrs = json?.features?.[0]?.attributes;
+      const zoning = attrs?.ZN24_CITY ? { code: attrs.ZN24_CITY, city: attrs.CITY ?? null } : null;
+      if (selectedAin === ain) onParcelSelect?.({ ain, address, stats, anchorRect, center, zoning, zoningLoading: false });
     } catch (err) {
       console.error('Zoning fetch failed', err);
-      if (selectedAin === ain) onParcelSelect?.({ ain, address, stats, anchorRect, zoning: null, zoningLoading: false });
+      if (selectedAin === ain) onParcelSelect?.({ ain, address, stats, anchorRect, center, zoning: null, zoningLoading: false });
     }
+  }
+
+  // Clicking a parcel highlights it immediately, moves the camera so the parcel sits centered in
+  // the part of the map the sheet leaves visible (zooming in if needed, never out), and only then
+  // opens the sheet — rather than the sheet sliding in over a camera that's still moving.
+  const PARCEL_FOCUS_MAX_ZOOM = 20;
+  const SHEET_MAX_WIDTH = 384; // design system Sheet: w-3/4, capped at sm:max-w-sm
+  const FOCUS_MS = 600;
+
+  function easeAndWait(opts) {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      map.easeTo(opts);
+      map.once('moveend', finish);
+      setTimeout(finish, (opts.duration ?? 500) + 100); // moveend never fires for a no-op ease
+    });
   }
 
   map.on('click', PARCEL_HIT_LAYER_ID, (e) => {
     const feature = e.features?.[0];
     if (!feature) return;
     clearPreview();
-    selectParcel(feature);
-  });
-
-  // Zooms in on the selected parcel so it reads clearly, without zooming out from a closer view
-  // the user was already at.
-  const PARCEL_FOCUS_MAX_ZOOM = 20;
-  map.on('click', PARCEL_HIT_LAYER_ID, (e) => {
-    const feature = e.features?.[0];
-    if (!feature) return;
     const ring = feature.geometry.type === 'Polygon'
       ? feature.geometry.coordinates[0]
       : feature.geometry.coordinates[0][0];
@@ -816,37 +857,64 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange } = 
       (b, [lng, lat]) => b.extend([lng, lat]),
       new mapboxgl.LngLatBounds(ring[0], ring[0])
     );
-    const camera = map.cameraForBounds(bounds, { padding: 120, maxZoom: PARCEL_FOCUS_MAX_ZOOM });
-    if (camera) map.easeTo({ center: camera.center, zoom: Math.max(map.getZoom(), camera.zoom), duration: 600 });
+
+    const { clientWidth: w } = map.getContainer();
+    const sheetWidth = w >= 640 ? Math.min(w * 0.75, SHEET_MAX_WIDTH) : w * 0.75;
+    // Only offset for the sheet when there's a usable strip of map left beside it (not on phones,
+    // where the sheet covers three quarters of the screen).
+    const offsetForSheet = w - sheetWidth >= 280 ? sheetWidth : 0;
+    const camera = map.cameraForBounds(bounds, {
+      padding: { top: 120, bottom: 120, left: 80, right: 80 + offsetForSheet },
+      maxZoom: PARCEL_FOCUS_MAX_ZOOM,
+    });
+    let reveal = null;
+    if (camera) {
+      const zoom = Math.max(map.getZoom(), camera.zoom);
+      // Map center sits east of the parcel by half the sheet width (in pixels at the target
+      // zoom), which puts the parcel in the middle of the uncovered area.
+      const c = bounds.getCenter();
+      const degPerPx = 360 / (512 * 2 ** zoom);
+      reveal = easeAndWait({ center: [c.lng + (offsetForSheet / 2) * degPerPx, c.lat], zoom, duration: FOCUS_MS });
+    }
+    selectParcel(feature, reveal);
   });
 
-  // A direct easeTo across a big distance while still pitched/zoomed in feels disorienting (the
-  // whole 3D scene swims past at a weird angle) — so this flattens to a top-down overview first,
-  // pans across at that safe zoomed-out altitude, then dives back in, matching how flying to a
-  // new place actually reads visually (level off, travel, descend) rather than a raw camera cut.
-  const ADDRESS_FLY_OVERVIEW_ZOOM = 11.5;
+  // One continuous flyTo arc — levels the pitch, rises, travels and descends as a single curve.
+  // This used to be three chained easeTo stages (flatten, overview, dive), which read as
+  // stop-start: each stage decelerated to a halt before the next one kicked off.
   const ADDRESS_FLY_FINAL_ZOOM = 17;
+  const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-  // map.once('moveend', ...) never fires if the requested easeTo turns out to be a no-op (e.g.
-  // pitch is already 0, or already at that zoom/center) — a real trap for a chained sequence
-  // like this, where any single stage silently stalling hangs everything after it. A timeout
-  // safety net (matched to the ease's own duration) guarantees the chain always keeps moving.
-  function easeToStage(opts) {
+  // map.once('moveend', ...) never fires if the flight turns out to be a no-op (already there),
+  // so a timeout safety net guarantees the code after it always runs.
+  function flyToAndWait(opts) {
     return new Promise((resolve) => {
       let done = false;
       const finish = () => { if (!done) { done = true; resolve(); } };
-      map.easeTo({ duration: 500, ...opts });
+      map.flyTo(opts);
       map.once('moveend', finish);
-      setTimeout(finish, (opts.duration ?? 500) + 100);
+      setTimeout(finish, (opts.duration ?? 3000) + 200);
     });
   }
 
   async function goToAddress(lng, lat) {
     clearSelection();
     clearPreview();
-    await easeToStage({ pitch: 0, duration: 500 });
-    await easeToStage({ center: [lng, lat], zoom: ADDRESS_FLY_OVERVIEW_ZOOM, duration: 700 });
-    await easeToStage({ center: [lng, lat], zoom: ADDRESS_FLY_FINAL_ZOOM, duration: 700 });
+    // Explicit duration scaled by distance and zoom change, not flyTo's speed/maxDuration: when
+    // the computed flight exceeds maxDuration Mapbox skips the animation and jumps instead.
+    const from = map.getCenter();
+    const km = from.distanceTo(new mapboxgl.LngLat(lng, lat)) / 1000;
+    const dz = Math.abs(ADDRESS_FLY_FINAL_ZOOM - map.getZoom());
+    const duration = Math.min(2600, Math.max(1000, 700 + dz * 90 + Math.log2(1 + km) * 160));
+    await flyToAndWait({
+      center: [lng, lat],
+      zoom: ADDRESS_FLY_FINAL_ZOOM,
+      pitch: 0,
+      curve: 1.5,
+      duration,
+      easing: easeInOutCubic,
+      essential: true,
+    });
 
     await new Promise((r) => setTimeout(r, 300)); // let parcels for the new area load in
     const point = map.project([lng, lat]);
