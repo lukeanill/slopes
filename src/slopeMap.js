@@ -386,12 +386,14 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   let loadingLabel = '';
   let pendingTiles = 0; // analysis tiles being fetched/computed (not cache/IndexedDB hits)
   let lastStatusKey = null;
+  let isFlatView = false; // set by evaluateFlatness() once the map settles
   let removed = false;
   function updateStatus() {
     if (removed) return; // a removed instance (e.g. StrictMode's discarded mount) must not drive the UI
     let status = null;
     if (map.getZoom() < MIN_ZOOM) status = { kind: 'prompt', text: `Zoom in to ${MIN_ZOOM} for slope` };
     else if (pendingTiles > 0) status = { kind: 'loading', label: loadingLabel };
+    else if (isFlatView) status = { kind: 'info', text: 'Very little slope in this area' };
     const key = status ? `${status.kind}:${status.text ?? status.label}` : null;
     if (key === lastStatusKey) return;
     lastStatusKey = key;
@@ -536,6 +538,47 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
 
   // The prompt/loading pill flips the instant the zoom crosses MIN_ZOOM, mid-gesture.
   map.on('zoom', updateStatus);
+
+  // Flat areas render as almost nothing (the ramp barely tints anything under ~10%), which can
+  // read as "slope didn't load". Once the map settles, sample the visible area from the cached
+  // analysis grids; if hardly any of it is steeper than FLAT_SLOPE_PCT, say so in the pill.
+  const FLAT_SLOPE_PCT = 10;
+  const FLAT_MAX_SHARE = 0.05; // under 5% of the view steeper than that → "very little slope"
+  const FLAT_SAMPLES_PER_SIDE = 40;
+
+  function setFlatView(flat) {
+    if (flat === isFlatView) return;
+    isFlatView = flat;
+    updateStatus();
+  }
+
+  function evaluateFlatness() {
+    if (map.getZoom() < MIN_ZOOM || pendingTiles > 0) return setFlatView(false);
+    const b = map.getBounds();
+    const nw = lngLatToTileFrac(b.getWest(), b.getNorth(), ANALYSIS_ZOOM);
+    const se = lngLatToTileFrac(b.getEast(), b.getSouth(), ANALYSIS_ZOOM);
+    let total = 0, found = 0, steep = 0;
+    for (let i = 0; i < FLAT_SAMPLES_PER_SIDE; i++) {
+      for (let j = 0; j < FLAT_SAMPLES_PER_SIDE; j++) {
+        const fx = nw.x + (se.x - nw.x) * ((i + 0.5) / FLAT_SAMPLES_PER_SIDE);
+        const fy = nw.y + (se.y - nw.y) * ((j + 0.5) / FLAT_SAMPLES_PER_SIDE);
+        const tx = Math.floor(fx), ty = Math.floor(fy);
+        total++;
+        const grid = gridCache.get(`${ANALYSIS_ZOOM}:${tx}:${ty}`);
+        if (!grid) continue;
+        const v = grid[Math.floor((fy - ty) * TILE_SIZE) * TILE_SIZE + Math.floor((fx - tx) * TILE_SIZE)];
+        if (v === NO_DATA) continue;
+        found++;
+        if (v >= FLAT_SLOPE_PCT * 10) steep++;
+      }
+    }
+    // Only judge with most of the view's data in hand, so partial loads never read as flat.
+    if (found < total * 0.8) return setFlatView(false);
+    setFlatView(steep / found < FLAT_MAX_SHARE);
+  }
+
+  map.on('idle', evaluateFlatness);
+  map.on('movestart', () => setFlatView(false));
 
   // LA County's own ArcGIS REST service — free, live, and returns real parcel polygons as
   // GeoJSON for a bbox query. There's no free nationwide parcel API; this only covers LA

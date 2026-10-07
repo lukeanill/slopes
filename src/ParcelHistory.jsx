@@ -13,7 +13,8 @@ const PEEK = 3; // cards visible behind the top one while collapsed
 // Cards use the same dark glass as the search and About buttons. Glass is see-through, so the
 // back cards' text would show through the top card while stacked — it fades out until the
 // stack fans open, leaving just their glass edges peeking out below.
-const GLASS = 'border border-white/25 bg-[rgba(16,15,15,0.45)] shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_4px_16px_rgba(0,0,0,0.25)] backdrop-blur-md';
+// Heavier blur than the buttons: the cards carry text over busy map detail.
+const GLASS = 'border border-white/25 bg-[rgba(16,15,15,0.45)] shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_4px_16px_rgba(0,0,0,0.25)] backdrop-blur-3xl';
 const contentVariants = (i) => ({
   collapsed: { opacity: i === 0 ? 1 : 0, transition: { duration: 0.15 } },
   expanded: { opacity: 1, transition: { duration: 0.2, delay: 0.05 } },
