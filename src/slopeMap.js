@@ -519,7 +519,8 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         // flattened this layer's colors no matter how much alpha/brightness was baked into the
         // pixels. raster-emissive-strength makes the layer render as self-lit, bypassing that.
         // No fade: tiles fading up from transparent read as briefly flatter than they are.
-        paint: { 'raster-emissive-strength': 1, 'raster-fade-duration': 0 },
+        // Slightly translucent so the basemap's roads and labels read through the slope colors.
+        paint: { 'raster-emissive-strength': 1, 'raster-fade-duration': 0, 'raster-opacity': 0.85 },
       });
     }
     addStripeImages();
