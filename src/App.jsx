@@ -3,9 +3,9 @@ import { ExternalLink } from 'lucide-react';
 import { Tooltip, TooltipTrigger, TooltipPanel } from '@lukeanill/ui/components/animate-ui/components/base/tooltip';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@lukeanill/ui/components/sheet';
 import { Toaster, toast } from '@lukeanill/ui/components/toast';
-import { ShimmeringText } from '@lukeanill/ui/components/animate-ui/primitives/texts/shimmering';
 import AddressSearchBar from './AddressSearchBar.jsx';
 import AboutPanel from './AboutPanel.jsx';
+import StatusMessage from './StatusMessage.jsx';
 import { textOnColor } from './colorContrast.js';
 import SlopeDistributionChart from './SlopeDistributionChart.jsx';
 import { initSlopeMap } from './slopeMap.js';
@@ -267,18 +267,7 @@ function MapApp() {
         />
       </div>
       <AboutPanel onOpenChange={setAboutOpen} />
-      <div className={`zoom-status-pill${status ? ' is-visible' : ''}`}>
-        {status ? (
-          <ShimmeringText
-            key={status.kind === 'loading' ? status.label : status.text}
-            text={status.kind === 'loading' ? status.label : status.text}
-            duration={2.3}
-            wave
-            color="#ffffff"
-            shimmeringColor="rgba(255, 255, 255, 0.4)"
-          />
-        ) : null}
-      </div>
+      <StatusMessage status={status} />
       <div id="map-controls">
         <div id="zoom-level" aria-label="Current zoom level"></div>
         <button id="reset-bearing" className="map-control-btn" type="button" aria-label="Reset to north"></button>

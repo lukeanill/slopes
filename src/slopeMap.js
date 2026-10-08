@@ -16,6 +16,34 @@ import iconCrosshairSimple from './icons/CrosshairSimple.svg?raw';
 // onStatusChange(info | null) fires with { kind: 'prompt', text } when zoomed out too far to
 // render slope, { kind: 'loading', label } while fetching/rendering/finishing a new tile grid,
 // or null once idle (nothing to show).
+// Map-wide zoom bounds: below SLOPE_MIN_ZOOM slope isn't shown.
+export const MAP_MIN_ZOOM = 4.5;
+export const SLOPE_MIN_ZOOM = 11;
+
+// Exact spec stops: [percent, r, g, b, alpha], incl. the 0% anchor — a near-invisible
+// rgba(0,0,0,0.04) wash rather than true transparency. Colors interpolate smoothly across all of
+// them; low single-digit percents stay effectively invisible since alpha only reaches .04 there.
+export const RAMP_STOPS = [
+  [0, 0, 0, 0, 0.04],       // rgba(0,0,0,0.04)
+  // 20–40% alphas raised (were .40/.50/.60): their dark purples/blues blended half-transparent
+  // over the dark basemap read as barely-there murk. Stops above nudged up to keep a steady climb.
+  [20, 128, 71, 143, 0.55], // rgba(128,71,143,0.55)
+  [30, 104, 87, 180, 0.65], // rgba(104,87,180,0.65)
+  [40, 72, 110, 164, 0.72], // rgba(72,110,164,0.72)
+  [50, 71, 156, 130, 0.78], // rgba(71,156,130,0.78)
+  [60, 128, 189, 100, 0.85],// rgba(128,189,100,0.85)
+  [70, 193, 202, 71, 0.92], // rgba(193,202,71,0.92)
+  [80, 196, 130, 89, 1.00], // rgba(196,130,89,1)
+  [90, 161, 59, 59, 1.00],  // rgba(161,59,59,1)
+  [110, 161, 59, 59, 1.00], // holds the same red up to 110%…
+  [114, 112, 28, 36, 1.00], // …then a darker red for 110%+ (a soft 4% step, not a hard edge)
+];
+
+// The ramp's colors left to right, as a CSS gradient (full opacity) — for UI that previews it.
+export const SLOPE_RAMP_GRADIENT = `linear-gradient(90deg, ${RAMP_STOPS.slice(1)
+  .map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`)
+  .join(', ')})`;
+
 export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onParcelError } = {}) {
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   const els = {
@@ -54,7 +82,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const map = new mapboxgl.Map({
     container: 'map',
     style: STYLE_DARK,
-    minZoom: 4.5,
+    minZoom: MAP_MIN_ZOOM,
     maxZoom: MAX_ZOOM,
     ...DEFAULT_CAMERA,
   });
@@ -119,20 +147,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const DEM_URL = (z, x, y) =>
     `https://api.mapbox.com/v4/mapbox.terrain-rgb/${z}/${x}/${y}.pngraw?access_token=${mapboxgl.accessToken}`;
 
-  // Exact spec stops, incl. the 0% anchor — a near-invisible rgba(0,0,0,0.04) wash rather than
-  // true transparency. Colors interpolate smoothly across all of them; low single-digit percents
-  // stay effectively invisible on their own since alpha only reaches .04 there.
-  const RAMP_STOPS = [
-    [0, 0, 0, 0, 0.04],       // rgba(0,0,0,0.04)
-    [20, 128, 71, 143, 0.40], // rgba(128,71,143,0.40)
-    [30, 104, 87, 180, 0.50], // rgba(104,87,180,0.50)
-    [40, 72, 110, 164, 0.60], // rgba(72,110,164,0.60)
-    [50, 71, 156, 130, 0.70], // rgba(71,156,130,0.70)
-    [60, 128, 189, 100, 0.80],// rgba(128,189,100,0.80)
-    [70, 193, 202, 71, 0.90], // rgba(193,202,71,0.90)
-    [80, 196, 130, 89, 1.00], // rgba(196,130,89,1)
-    [90, 161, 59, 59, 1.00],  // rgba(161,59,59,1)
-  ];
+  // Interpolates RAMP_STOPS (module scope) for a slope percent.
   function percentToColor(pct) {
     const stops = RAMP_STOPS;
     if (pct <= stops[0][0]) return stops[0].slice(1);
@@ -147,7 +162,8 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return stops[stops.length - 1].slice(1);
   }
   // 4 tiers matching the ramp's color families — used for the popover's summary badge.
-  const BAND_DESCRIPTORS = ['flat', 'minor', 'minor', 'minor', 'moderate', 'moderate', 'moderate', 'steep', 'steep'];
+  // One descriptor per RAMP_STOPS entry.
+  const BAND_DESCRIPTORS = ['flat', 'minor', 'minor', 'minor', 'moderate', 'moderate', 'moderate', 'steep', 'steep', 'very steep', 'very steep'];
   function bandSolidColor(idx) {
     if (idx === 0) return '#424563';
     const [r, g, b] = percentToColor(RAMP_STOPS[idx][0]);
@@ -181,22 +197,26 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return (156543.03392 * Math.cos((lat * Math.PI) / 180)) / 2 ** z * (256 / tileSize);
   }
 
-  const MIN_ZOOM = 11; // camera zoom below which slope isn't shown
+  const MIN_ZOOM = SLOPE_MIN_ZOOM; // camera zoom below which slope isn't shown
   const TILE_SIZE = 256;
   const SLOPE_SRC_ID = 'slope-src';
   const SLOPE_LAYER_ID = 'slope';
   const NO_DATA = 65535; // grid sentinel for "no slope here" (a failed DEM tile) — renders transparent
 
-  // Slope is only ever computed at one resolution: z14 DEM tiles (~6–8 m/px here, about the
-  // true resolution of the underlying USGS elevation data — terrain-RGB's z15 is just upsampled
-  // z14). Lower-zoom display tiles average those high-res slope values rather than computing
-  // slope from coarser elevation, which smooths terrain and understated steepness: the same
-  // hillside read green at zoom 11 and red at zoom 14, and the lower-zoom tiles Mapbox shows
-  // while sharper ones load made everything look flatter than it is.
-  const ANALYSIS_ZOOM = 14;
+  // Slope is computed from high-res DEM tiles and lower-zoom display tiles average those slope
+  // values, rather than computing slope from coarser elevation — which smooths terrain and
+  // understated steepness (the same hillside read green at zoom 11 and red at zoom 14).
+  //   display z12–13 → averaged from z14 analysis tiles (~6–8 m/px here; keeps zoomed-out loads light)
+  //   display z14–15 → from z15 analysis tiles (~3–4 m/px, terrain-RGB's max). z15 carries real
+  //                    detail beyond z14 (measured: ~0.6 m mean / ~3 m max difference from an
+  //                    upsampled z14 over these hills) — capping at z14 made close zooms soft.
+  // Mapbox overscales z15 for closer zooms; those tiles are drawn at 3x (see colorizeGridUpsampled).
+  const BASE_ZOOM = 14;
+  const DETAIL_ZOOM = 15;
   const DISPLAY_MIN_ZOOM = 12; // camera zoom 11 draws 256px tiles at z12
+  const analysisZoomFor = (displayZoom) => (displayZoom >= BASE_ZOOM ? DETAIL_ZOOM : BASE_ZOOM);
 
-  // z14 analysis grids, keyed `${z}:${x}:${y}` — the canonical slope data. Display tiles are
+  // z14/z15 analysis grids, keyed `${z}:${x}:${y}` — the canonical slope data. Display tiles are
   // derived from these, and hover/parcel lookups read them directly (a color baked into a tile
   // can't be reversed back into a percent). Stored as percent × 10 in a Uint16Array (0.1%
   // precision) — half the memory of Float32 so more of the area you've explored stays cached.
@@ -239,15 +259,15 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         const job = jobQueue.pop(); // newest first — the current view beats earlier requests
         entry.busy++;
         workerJobs.set(job.id, job);
-        entry.worker.postMessage({ id: job.id, url: job.url, mpp: job.mpp });
+        entry.worker.postMessage({ id: job.id, urls: job.urls, mpp: job.mpp });
       }
     }
   }
   // Returns { promise, cancel }; cancel() only has an effect while the job is still queued.
-  function queueWorkerJob(url, mpp) {
+  function queueWorkerJob(urls, mpp) {
     let job;
     const promise = new Promise((resolve, reject) => {
-      job = { id: nextJobId++, url, mpp, resolve, reject };
+      job = { id: nextJobId++, urls, mpp, resolve, reject };
     });
     jobQueue.push(job);
     pumpJobs();
@@ -261,13 +281,13 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return { promise, cancel };
   }
 
-  // Analysis grid for one z14 tile: memory → IndexedDB (a previous session) → worker. In-flight
+  // Analysis grid for one z14/z15 tile: memory → IndexedDB (a previous session) → worker. In-flight
   // requests are shared, so the display tiles at every zoom that need this tile wait on one job.
   // Each caller passes its tile's abort signal; the job is dropped from the queue only once every
   // caller has given up. Resolves null if the DEM tile failed or the job was dropped.
   const analysisInFlight = new Map(); // key → { promise, refs, cancel }
-  function getAnalysisGrid(x, y, signal) {
-    const key = `${ANALYSIS_ZOOM}:${x}:${y}`;
+  function getAnalysisGrid(z, x, y, signal) {
+    const key = `${z}:${x}:${y}`;
     const cached = gridCache.get(key);
     if (cached) {
       cacheLru(gridCache, GRID_CACHE_LIMIT, key, cached);
@@ -280,8 +300,14 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         const stored = await loadGrid(key);
         if (stored) return stored;
         if (entry.refs === 0) throw new DOMException('cancelled', 'AbortError'); // everyone left during the IndexedDB lookup
-        const centerLat = tileToLngLat(x + 0.5, y + 0.5, ANALYSIS_ZOOM).lat;
-        const job = queueWorkerJob(DEM_URL(ANALYSIS_ZOOM, x, y), metersPerPixel(centerLat, ANALYSIS_ZOOM, TILE_SIZE));
+        const centerLat = tileToLngLat(x + 0.5, y + 0.5, z).lat;
+        // The tile plus its 8 neighbors (row-major, center at index 4) so the worker can compute
+        // slope across tile edges instead of clamping there.
+        const urls = [];
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) urls.push(DEM_URL(z, x + dx, y + dy));
+        }
+        const job = queueWorkerJob(urls, metersPerPixel(centerLat, z, TILE_SIZE));
         entry.cancel = job.cancel;
         startNetworkLoad();
         try {
@@ -313,18 +339,20 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return entry.promise;
   }
 
-  // Display grid for a z12/13 tile: each output pixel is the mean slope of the s×s analysis
+  // Display grid for a z12–14 tile: each output pixel is the mean slope of the s×s analysis
   // pixels under it (s = 2 or 4), ignoring no-data.
   async function getDisplayGrid(z, x, y, signal) {
+    const az = analysisZoomFor(z);
+    if (az === z) return getAnalysisGrid(z, x, y, signal);
     const key = `${z}:${x}:${y}`;
     const cached = displayCache.get(key);
     if (cached) {
       cacheLru(displayCache, DISPLAY_CACHE_LIMIT, key, cached);
       return cached;
     }
-    const s = 2 ** (ANALYSIS_ZOOM - z);
+    const s = 2 ** (az - z);
     const children = await Promise.all(
-      Array.from({ length: s * s }, (_, i) => getAnalysisGrid(x * s + (i % s), y * s + Math.floor(i / s), signal))
+      Array.from({ length: s * s }, (_, i) => getAnalysisGrid(az, x * s + (i % s), y * s + Math.floor(i / s), signal))
     );
     const out = new Uint16Array(TILE_SIZE * TILE_SIZE).fill(NO_DATA);
     const span = TILE_SIZE / s; // output pixels per child tile, per axis
@@ -370,44 +398,135 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return img;
   }
 
-  // Slope at a point from the cached analysis grid covering it, or null if it isn't loaded —
-  // the same full-resolution value whatever the camera zoom.
-  function getSlopeAt(lng, lat) {
-    const frac = lngLatToTileFrac(lng, lat, ANALYSIS_ZOOM);
-    const tx = Math.floor(frac.x), ty = Math.floor(frac.y);
-    const grid = gridCache.get(`${ANALYSIS_ZOOM}:${tx}:${ty}`);
-    if (!grid) return null;
-    const v = grid[Math.floor((frac.y - ty) * TILE_SIZE) * TILE_SIZE + Math.floor((frac.x - tx) * TILE_SIZE)];
-    return v === NO_DATA ? null : v / 10;
+  // Zoomed-in tiles are stretched far past their 256px (Mapbox overscales z15: 8x at zoom 18), so
+  // they're drawn at 3x with slope values interpolated *before* coloring, using a separable
+  // Catmull-Rom (bicubic) kernel. Interpolating colors instead (what the GPU does when stretching)
+  // gave stair-stepped edges; bilinear slope interpolation still left straight-segment contours,
+  // which showed as a sawtooth wherever a contour met a sharp color boundary (e.g. the 110% red).
+  const UPSAMPLE = 3;
+  const OUT_UP = TILE_SIZE * UPSAMPLE;
+  // Catmull-Rom weights for the 4 taps at fractional offset t, precomputed per output phase.
+  const CR_WEIGHTS = Array.from({ length: UPSAMPLE }, (_, phase) => {
+    const t = ((phase + 0.5) / UPSAMPLE - 0.5 + 1) % 1; // fractional position between source px
+    const t2 = t * t, t3 = t2 * t;
+    return [
+      (-t3 + 2 * t2 - t) / 2,
+      (3 * t3 - 5 * t2 + 2) / 2,
+      (-3 * t3 + 4 * t2 + t) / 2,
+      (t3 - t2) / 2,
+    ];
+  });
+  // Source index of the tap just before the sample point, per output coordinate.
+  const CR_BASE = Int32Array.from({ length: OUT_UP }, (_, o) => Math.floor((o + 0.5) / UPSAMPLE - 0.5) - 1);
+  const clampIdx = (i) => (i < 0 ? 0 : i > TILE_SIZE - 1 ? TILE_SIZE - 1 : i);
+
+  function colorizeGridUpsampled(grid) {
+    // Horizontal pass: TILE_SIZE rows × OUT_UP cols. NaN marks no-data so it never blends in.
+    const src = new Float32Array(grid.length);
+    for (let p = 0; p < grid.length; p++) src[p] = grid[p] === NO_DATA ? NaN : grid[p];
+    const rows = new Float32Array(TILE_SIZE * OUT_UP);
+    for (let y = 0; y < TILE_SIZE; y++) {
+      const r = y * TILE_SIZE;
+      for (let o = 0; o < OUT_UP; o++) {
+        const b = CR_BASE[o], w = CR_WEIGHTS[o % UPSAMPLE];
+        const v0 = src[r + clampIdx(b)], v1 = src[r + clampIdx(b + 1)], v2 = src[r + clampIdx(b + 2)], v3 = src[r + clampIdx(b + 3)];
+        let v = v0 * w[0] + v1 * w[1] + v2 * w[2] + v3 * w[3];
+        if (Number.isNaN(v)) v = w[1] >= w[2] ? v1 : v2; // touching no-data: nearest instead of blending
+        rows[y * OUT_UP + o] = v;
+      }
+    }
+    // Vertical pass + coloring.
+    const img = new ImageData(OUT_UP, OUT_UP);
+    const out = new Uint32Array(img.data.buffer);
+    const lut = new Uint32Array(COLOR_LUT.buffer);
+    for (let o = 0; o < OUT_UP; o++) {
+      const b = CR_BASE[o], w = CR_WEIGHTS[o % UPSAMPLE];
+      const r0 = clampIdx(b) * OUT_UP, r1 = clampIdx(b + 1) * OUT_UP, r2 = clampIdx(b + 2) * OUT_UP, r3 = clampIdx(b + 3) * OUT_UP;
+      for (let x = 0; x < OUT_UP; x++) {
+        let v = rows[r0 + x] * w[0] + rows[r1 + x] * w[1] + rows[r2 + x] * w[2] + rows[r3 + x] * w[3];
+        if (Number.isNaN(v)) v = w[1] >= w[2] ? rows[r1 + x] : rows[r2 + x];
+        out[o * OUT_UP + x] = Number.isNaN(v) ? 0 : lut[Math.min(COLOR_LUT_MAX, Math.max(0, Math.round(v)))];
+      }
+    }
+    return img;
   }
 
-  // Loading/prompt pill state. The verb rotates per loading burst so it doesn't feel static.
+  // Raw grid value (percent × 10) at a point from the sharpest cached analysis grid, NO_DATA if
+  // the point has none, or undefined if nothing covering it is loaded.
+  function slopeValueAt(lng, lat) {
+    for (const z of [DETAIL_ZOOM, BASE_ZOOM]) {
+      const frac = lngLatToTileFrac(lng, lat, z);
+      const tx = Math.floor(frac.x), ty = Math.floor(frac.y);
+      const grid = gridCache.get(`${z}:${tx}:${ty}`);
+      if (grid) return grid[Math.floor((frac.y - ty) * TILE_SIZE) * TILE_SIZE + Math.floor((frac.x - tx) * TILE_SIZE)];
+    }
+    return undefined;
+  }
+
+  // Slope percent at a point, or null if it isn't loaded — from the sharpest data available.
+  function getSlopeAt(lng, lat) {
+    const v = slopeValueAt(lng, lat);
+    return v === undefined || v === NO_DATA ? null : v / 10;
+  }
+
+  // Status message state. The verb rotates per loading session so it doesn't feel static.
   const LOADING_VERBS = ['Pulling', 'Fetching', 'Grabbing', 'Summoning', 'Wrangling', 'Excavating', 'Conjuring', 'Divining'];
   let loadingLabel = '';
   let pendingTiles = 0; // analysis tiles being fetched/computed (not cache/IndexedDB hits)
   let lastStatusKey = null;
   let isFlatView = false; // set by evaluateFlatness() once the map settles
+  // "Loading" starts only when real network work does (so panning over cached areas doesn't flash
+  // it), then holds until nothing is downloading AND no display tile is still being assembled,
+  // plus a short grace period — so it persists across gaps between batches instead of flickering
+  // off and on, and only clears once the view's slope is fully loaded and cached.
+  // It also waits LOADING_SHOW_DELAY_MS before appearing, so a few quick fetches mid-gesture
+  // (e.g. zooming out through the threshold) don't flash it in and straight back out.
+  let loadingActive = false;
+  let loadingOnTimer = null;
+  let loadingOffTimer = null;
+  const LOADING_SHOW_DELAY_MS = 300;
+  const LOADING_GRACE_MS = 400;
   let removed = false;
   function updateStatus() {
     if (removed) return; // a removed instance (e.g. StrictMode's discarded mount) must not drive the UI
     let status = null;
-    if (map.getZoom() < MIN_ZOOM) status = { kind: 'prompt', text: `Zoom in to ${MIN_ZOOM} for slope` };
-    else if (pendingTiles > 0) status = { kind: 'loading', label: loadingLabel };
-    else if (isFlatView) status = { kind: 'info', text: 'Very little slope in this area' };
+    if (map.getZoom() < MIN_ZOOM) status = { kind: 'prompt', text: 'Zoom in for slope analysis' };
+    else if (loadingActive) status = { kind: 'loading', label: loadingLabel };
+    else if (isFlatView) status = { kind: 'info', text: 'Little slope in this area' };
     const key = status ? `${status.kind}:${status.text ?? status.label}` : null;
     if (key === lastStatusKey) return;
     lastStatusKey = key;
     onStatusChange?.(status);
   }
-  function startNetworkLoad() {
-    if (pendingTiles++ === 0) {
-      loadingLabel = `${LOADING_VERBS[Math.floor(Math.random() * LOADING_VERBS.length)]} slope analysis`;
+  function refreshLoading() {
+    clearTimeout(loadingOffTimer);
+    if (pendingTiles > 0 && !loadingActive) {
+      if (!loadingOnTimer) {
+        loadingOnTimer = setTimeout(() => {
+          loadingOnTimer = null;
+          if (pendingTiles === 0) return; // downloads finished before it was worth showing
+          loadingActive = true;
+          loadingLabel = `${LOADING_VERBS[Math.floor(Math.random() * LOADING_VERBS.length)]} slope analysis`;
+          updateStatus();
+        }, LOADING_SHOW_DELAY_MS);
+      }
+      return;
     }
-    updateStatus();
+    if (!loadingActive || pendingTiles > 0 || pendingDisplay.size > 0) return;
+    loadingOffTimer = setTimeout(() => {
+      if (pendingTiles > 0 || pendingDisplay.size > 0) return;
+      loadingActive = false;
+      updateStatus();
+      evaluateFlatness(); // the map may already have gone idle while we waited
+    }, LOADING_GRACE_MS);
+  }
+  function startNetworkLoad() {
+    pendingTiles++;
+    refreshLoading();
   }
   function endNetworkLoad() {
     pendingTiles--;
-    updateStatus();
+    refreshLoading();
   }
 
   // Loading placeholder: tiles Mapbox is waiting on get an animated stripe fill, so "not loaded
@@ -420,7 +539,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const pendingDisplay = new Map(); // `${z}:${x}:${y}` → { z, x, y }
 
   function drawingZoom() {
-    return Math.min(ANALYSIS_ZOOM, Math.max(DISPLAY_MIN_ZOOM, Math.floor(map.getZoom() + 1)));
+    return Math.min(DETAIL_ZOOM, Math.max(DISPLAY_MIN_ZOOM, Math.floor(map.getZoom() + 1)));
   }
 
   let pendingSyncQueued = false;
@@ -490,18 +609,23 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
       type: 'custom',
       tileSize: TILE_SIZE,
       minzoom: DISPLAY_MIN_ZOOM,
-      maxzoom: ANALYSIS_ZOOM, // Mapbox overscales z14 for closer zooms
+      maxzoom: DETAIL_ZOOM, // Mapbox overscales z15 for closer zooms
       async loadTile({ z, x, y }, { signal }) {
         const key = `${z}:${x}:${y}`;
         pendingDisplay.set(key, { z, x, y });
         syncPendingLayer();
+        refreshLoading();
         try {
-          const grid = z >= ANALYSIS_ZOOM ? await getAnalysisGrid(x, y, signal) : await getDisplayGrid(z, x, y, signal);
-          if (signal.aborted || !grid) return null;
-          return colorizeGrid(grid);
+          if (z >= DETAIL_ZOOM) {
+            const grid = await getAnalysisGrid(DETAIL_ZOOM, x, y, signal);
+            return signal.aborted || !grid ? null : colorizeGridUpsampled(grid);
+          }
+          const grid = await getDisplayGrid(z, x, y, signal);
+          return signal.aborted || !grid ? null : colorizeGrid(grid);
         } finally {
           pendingDisplay.delete(key);
           syncPendingLayer();
+          refreshLoading();
         }
       },
     };
@@ -519,8 +643,9 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         // flattened this layer's colors no matter how much alpha/brightness was baked into the
         // pixels. raster-emissive-strength makes the layer render as self-lit, bypassing that.
         // No fade: tiles fading up from transparent read as briefly flatter than they are.
-        // Slightly translucent so the basemap's roads and labels read through the slope colors.
-        paint: { 'raster-emissive-strength': 1, 'raster-fade-duration': 0, 'raster-opacity': 0.85 },
+        // Full opacity: the ramp's own per-stop alpha already lets the basemap read through at low
+        // slopes; an extra layer-wide reduction made 20–40% nearly invisible on the dark basemap.
+        paint: { 'raster-emissive-strength': 1, 'raster-fade-duration': 0 },
       });
     }
     addStripeImages();
@@ -554,21 +679,16 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   }
 
   function evaluateFlatness() {
-    if (map.getZoom() < MIN_ZOOM || pendingTiles > 0) return setFlatView(false);
+    if (map.getZoom() < MIN_ZOOM || loadingActive) return setFlatView(false);
     const b = map.getBounds();
-    const nw = lngLatToTileFrac(b.getWest(), b.getNorth(), ANALYSIS_ZOOM);
-    const se = lngLatToTileFrac(b.getEast(), b.getSouth(), ANALYSIS_ZOOM);
     let total = 0, found = 0, steep = 0;
     for (let i = 0; i < FLAT_SAMPLES_PER_SIDE; i++) {
       for (let j = 0; j < FLAT_SAMPLES_PER_SIDE; j++) {
-        const fx = nw.x + (se.x - nw.x) * ((i + 0.5) / FLAT_SAMPLES_PER_SIDE);
-        const fy = nw.y + (se.y - nw.y) * ((j + 0.5) / FLAT_SAMPLES_PER_SIDE);
-        const tx = Math.floor(fx), ty = Math.floor(fy);
+        const lng = b.getWest() + (b.getEast() - b.getWest()) * ((i + 0.5) / FLAT_SAMPLES_PER_SIDE);
+        const lat = b.getNorth() + (b.getSouth() - b.getNorth()) * ((j + 0.5) / FLAT_SAMPLES_PER_SIDE);
         total++;
-        const grid = gridCache.get(`${ANALYSIS_ZOOM}:${tx}:${ty}`);
-        if (!grid) continue;
-        const v = grid[Math.floor((fy - ty) * TILE_SIZE) * TILE_SIZE + Math.floor((fx - tx) * TILE_SIZE)];
-        if (v === NO_DATA) continue;
+        const v = slopeValueAt(lng, lat);
+        if (v === undefined || v === NO_DATA) continue;
         found++;
         if (v >= FLAT_SLOPE_PCT * 10) steep++;
       }
@@ -1004,6 +1124,8 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     removed = true;
     clearTimeout(parcelRefreshTimer);
     setStripesAnimating(false);
+    clearTimeout(loadingOffTimer);
+    clearTimeout(loadingOnTimer);
     workers.forEach(({ worker }) => worker.terminate());
     jobQueue.length = 0;
     workerJobs.forEach((job) => job.reject(new DOMException('map removed', 'AbortError')));

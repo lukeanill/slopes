@@ -7,7 +7,7 @@ const DB_NAME = 'slope-cache';
 const STORE = 'grids';
 // Bump whenever computeSlopeGrid's output changes, so stale grids from an older algorithm are
 // never served — old-version keys simply stop matching and age out through eviction.
-const GRID_VERSION = 2;
+const GRID_VERSION = 4;
 const MAX_ENTRIES = 2000; // ~75KB each gzipped → ~150MB ceiling
 const PRUNE_EVERY = 100; // writes between eviction passes
 

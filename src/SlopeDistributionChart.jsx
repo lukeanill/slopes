@@ -1,21 +1,13 @@
+import { RAMP_STOPS } from './slopeMap.js';
+
 // Reconstructed component — see chat for context. Hand-rolled SVG "rug plot": each raw sample
 // is drawn as a thin bar positioned by its own slope % on a fixed domain (extended if any sample
-// exceeds it), colored by the same ramp as the map layer, with a smoothed density curve on top.
+// exceeds it), colored by the map layer's own ramp (shared RAMP_STOPS), with a smoothed density
+// curve on top.
 const VIEW_W = 280;
 const VIEW_H = 90;
 const BASE_DOMAIN_MAX = 100;
 
-const RAMP_STOPS = [
-  [0, 0, 0, 0],
-  [20, 128, 71, 143],
-  [30, 104, 87, 180],
-  [40, 72, 110, 164],
-  [50, 71, 156, 130],
-  [60, 128, 189, 100],
-  [70, 193, 202, 71],
-  [80, 196, 130, 89],
-  [90, 161, 59, 59],
-];
 
 function colorForPercent(pct) {
   const stops = RAMP_STOPS;
