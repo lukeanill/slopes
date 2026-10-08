@@ -174,3 +174,10 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   background-color: rgba(4, 4, 4, 0.12);
   backdrop-filter: none;
 }
+
+/* Ring at the exact point the hover chip is measuring. */
+.slope-hover-marker {
+  position: fixed; z-index: 7; width: 12px; height: 12px; margin: -6px 0 0 -6px;
+  border: 2px solid #ffffff; border-radius: 999px; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.4);
+}

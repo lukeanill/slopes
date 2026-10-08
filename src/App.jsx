@@ -162,11 +162,14 @@ function MapApp() {
       data-about-open={aboutOpen || undefined}
     >
       <div id="map"></div>
+      {/* Marks the exact point being measured; the chip sits beside it rather than above, since in
+          a tilted view "above" is a different patch of ground with a different color. */}
+      {slopeHover && <div className="slope-hover-marker" style={{ left: slopeHover.x, top: slopeHover.y }} />}
       <Tooltip open={!!slopeHover}>
         <TooltipTrigger render={<span style={{ display: 'none' }} />} />
         <TooltipPanel
           className="slope-tooltip-panel"
-          side="top"
+          side="right"
           sideOffset={14}
           anchor={{
             getBoundingClientRect: () => {

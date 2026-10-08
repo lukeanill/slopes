@@ -36,7 +36,13 @@ export const RAMP_STOPS = [
   [80, 196, 130, 89, 1.00], // rgba(196,130,89,1)
   [90, 161, 59, 59, 1.00],  // rgba(161,59,59,1)
   [110, 161, 59, 59, 1.00], // holds the same red up to 110%…
-  [114, 112, 28, 36, 1.00], // …then a darker red for 110%+ (a soft 4% step, not a hard edge)
+  [150, 112, 28, 36, 1.00], // …then deepens gradually to a darker red by 150% (no visible edge)
+];
+
+// The ramp as a Mapbox `raster-color` expression over the layer's decoded slope percent.
+export const SLOPE_RASTER_COLOR = [
+  'interpolate', ['linear'], ['raster-value'],
+  ...RAMP_STOPS.flatMap(([pct, r, g, b, a]) => [pct, `rgba(${r}, ${g}, ${b}, ${a})`]),
 ];
 
 // The ramp's colors left to right, as a CSS gradient (full opacity) — for UI that previews it.
@@ -210,7 +216,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   //   display z14–15 → from z15 analysis tiles (~3–4 m/px, terrain-RGB's max). z15 carries real
   //                    detail beyond z14 (measured: ~0.6 m mean / ~3 m max difference from an
   //                    upsampled z14 over these hills) — capping at z14 made close zooms soft.
-  // Mapbox overscales z15 for closer zooms; those tiles are drawn at 3x (see colorizeGridUpsampled).
+  // Mapbox overscales z15 for closer zooms; those tiles' values are upsampled 3x (see encodeGridUpsampled).
   const BASE_ZOOM = 14;
   const DETAIL_ZOOM = 15;
   const DISPLAY_MIN_ZOOM = 12; // camera zoom 11 draws 256px tiles at z12
@@ -378,31 +384,32 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return out;
   }
 
-  // RGBA lookup per stored grid value (percent × 10) — the ramp is flat past its last stop, so
-  // anything steeper reuses the final entry instead of interpolating per pixel.
-  const COLOR_LUT_MAX = RAMP_STOPS[RAMP_STOPS.length - 1][0] * 10;
-  const COLOR_LUT = new Uint8ClampedArray((COLOR_LUT_MAX + 1) * 4);
-  for (let v = 0; v <= COLOR_LUT_MAX; v++) {
-    const [r, g, b, a] = percentToColor(v / 10);
-    COLOR_LUT.set([r, g, b, Math.round(a * 255)], v * 4);
-  }
+  // Tiles carry slope *values*, not colors: the GPU blends neighboring values, then maps each
+  // screen pixel to a color via the layer's `raster-color` (see addSlopeLayer). Baking colors on
+  // the CPU instead meant the GPU stretched a colored image — at zoom 19–20 each image pixel
+  // covered ~10–20 screen px and every sharp color change showed the pixel grid as a sawtooth.
+  // Encoding: slope % in the red channel, byte = pct × 255/ENCODE_MAX_PCT (~0.6% steps). One
+  // channel keeps the GPU's blending correct (splitting 16 bits across two channels wraps).
+  // Alpha 0 marks no data.
+  const ENCODE_MAX_PCT = 160;
+  const ENCODE_SCALE = 255 / (ENCODE_MAX_PCT * 10); // grid stores percent × 10
+  const encodeValue = (v) => Math.round(Math.min(ENCODE_MAX_PCT * 10, Math.max(0, v)) * ENCODE_SCALE);
 
-  function colorizeGrid(grid) {
+  function encodeGrid(grid) {
     const img = new ImageData(TILE_SIZE, TILE_SIZE);
-    const out = new Uint32Array(img.data.buffer);
-    const lut = new Uint32Array(COLOR_LUT.buffer);
+    const d = img.data;
     for (let p = 0; p < grid.length; p++) {
       const v = grid[p];
-      out[p] = v === NO_DATA ? 0 : lut[Math.min(COLOR_LUT_MAX, v)];
+      if (v === NO_DATA) continue; // stays transparent
+      d[p * 4] = encodeValue(v);
+      d[p * 4 + 3] = 255;
     }
     return img;
   }
 
-  // Zoomed-in tiles are stretched far past their 256px (Mapbox overscales z15: 8x at zoom 18), so
-  // they're drawn at 3x with slope values interpolated *before* coloring, using a separable
-  // Catmull-Rom (bicubic) kernel. Interpolating colors instead (what the GPU does when stretching)
-  // gave stair-stepped edges; bilinear slope interpolation still left straight-segment contours,
-  // which showed as a sawtooth wherever a contour met a sharp color boundary (e.g. the 110% red).
+  // Zoomed-in tiles are stretched far past their 256px (Mapbox overscales z15: 32x at zoom 20), so
+  // their values are upsampled 3x with a separable Catmull-Rom (bicubic) kernel before encoding —
+  // the GPU then blends a smooth value surface rather than a coarse one, keeping contours round.
   const UPSAMPLE = 3;
   const OUT_UP = TILE_SIZE * UPSAMPLE;
   // Catmull-Rom weights for the 4 taps at fractional offset t, precomputed per output phase.
@@ -420,7 +427,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const CR_BASE = Int32Array.from({ length: OUT_UP }, (_, o) => Math.floor((o + 0.5) / UPSAMPLE - 0.5) - 1);
   const clampIdx = (i) => (i < 0 ? 0 : i > TILE_SIZE - 1 ? TILE_SIZE - 1 : i);
 
-  function colorizeGridUpsampled(grid) {
+  function encodeGridUpsampled(grid) {
     // Horizontal pass: TILE_SIZE rows × OUT_UP cols. NaN marks no-data so it never blends in.
     const src = new Float32Array(grid.length);
     for (let p = 0; p < grid.length; p++) src[p] = grid[p] === NO_DATA ? NaN : grid[p];
@@ -435,35 +442,69 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         rows[y * OUT_UP + o] = v;
       }
     }
-    // Vertical pass + coloring.
+    // Vertical pass + encoding.
     const img = new ImageData(OUT_UP, OUT_UP);
-    const out = new Uint32Array(img.data.buffer);
-    const lut = new Uint32Array(COLOR_LUT.buffer);
+    const d = img.data;
     for (let o = 0; o < OUT_UP; o++) {
       const b = CR_BASE[o], w = CR_WEIGHTS[o % UPSAMPLE];
       const r0 = clampIdx(b) * OUT_UP, r1 = clampIdx(b + 1) * OUT_UP, r2 = clampIdx(b + 2) * OUT_UP, r3 = clampIdx(b + 3) * OUT_UP;
       for (let x = 0; x < OUT_UP; x++) {
         let v = rows[r0 + x] * w[0] + rows[r1 + x] * w[1] + rows[r2 + x] * w[2] + rows[r3 + x] * w[3];
         if (Number.isNaN(v)) v = w[1] >= w[2] ? rows[r1 + x] : rows[r2 + x];
-        out[o * OUT_UP + x] = Number.isNaN(v) ? 0 : lut[Math.min(COLOR_LUT_MAX, Math.max(0, Math.round(v)))];
+        if (Number.isNaN(v)) continue; // no data: transparent
+        const i = (o * OUT_UP + x) * 4;
+        d[i] = encodeValue(v);
+        d[i + 3] = 255;
       }
     }
     return img;
   }
 
-  // Raw grid value (percent × 10) at a point from the sharpest cached analysis grid, NO_DATA if
-  // the point has none, or undefined if nothing covering it is loaded.
+  // The tile zoom Mapbox is drawing right now: custom sources round (camera zoom + 1, since their
+  // 256px tiles are half the 512px world tile size), clamped to the source's zoom range.
+  function drawingZoom() {
+    return Math.min(DETAIL_ZOOM, Math.max(DISPLAY_MIN_ZOOM, Math.round(map.getZoom() + 1)));
+  }
+
+  // Cached grid for tile z/x/y, whichever cache holds it (analysis grids for z14/15 analysis
+  // tiles, display grids for averaged z12–14 tiles).
+  function cachedGrid(z, x, y) {
+    const key = `${z}:${x}:${y}`;
+    return (analysisZoomFor(z) === z ? gridCache.get(key) : displayCache.get(key)) ?? null;
+  }
+
+  // Bilinear sample (percent × 10) of a grid at fractional tile coords, matching how the GPU
+  // blends the drawn tile. NO_DATA neighbors fall back to the nearest pixel.
+  function sampleGrid(grid, frac) {
+    const tx = Math.floor(frac.x), ty = Math.floor(frac.y);
+    const last = TILE_SIZE - 1;
+    const fx = Math.min(last, Math.max(0, (frac.x - tx) * TILE_SIZE - 0.5));
+    const fy = Math.min(last, Math.max(0, (frac.y - ty) * TILE_SIZE - 0.5));
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(last, x0 + 1), y1 = Math.min(last, y0 + 1);
+    const a = grid[y0 * TILE_SIZE + x0], b = grid[y0 * TILE_SIZE + x1], c = grid[y1 * TILE_SIZE + x0], d = grid[y1 * TILE_SIZE + x1];
+    if (a === NO_DATA || b === NO_DATA || c === NO_DATA || d === NO_DATA) {
+      return grid[Math.round(fy) * TILE_SIZE + Math.round(fx)];
+    }
+    const sx = fx - x0, sy = fy - y0;
+    return (a * (1 - sx) + b * sx) * (1 - sy) + (c * (1 - sx) + d * sx) * sy;
+  }
+
+  // Slope value (percent × 10) at a point as currently drawn — from the grid of the tile zoom on
+  // screen, so hover matches the colors you see (at zoom 12–13 that's the averaged display grid,
+  // not the sharper analysis data underneath). Falls back to any other loaded grid; NO_DATA if the
+  // point has none, undefined if nothing covering it is loaded.
   function slopeValueAt(lng, lat) {
-    for (const z of [DETAIL_ZOOM, BASE_ZOOM]) {
+    const drawn = drawingZoom();
+    const order = [drawn, ...[DETAIL_ZOOM, BASE_ZOOM, 13, 12].filter((z) => z !== drawn)];
+    for (const z of order) {
       const frac = lngLatToTileFrac(lng, lat, z);
-      const tx = Math.floor(frac.x), ty = Math.floor(frac.y);
-      const grid = gridCache.get(`${z}:${tx}:${ty}`);
-      if (grid) return grid[Math.floor((frac.y - ty) * TILE_SIZE) * TILE_SIZE + Math.floor((frac.x - tx) * TILE_SIZE)];
+      const grid = cachedGrid(z, Math.floor(frac.x), Math.floor(frac.y));
+      if (grid) return sampleGrid(grid, frac);
     }
     return undefined;
   }
 
-  // Slope percent at a point, or null if it isn't loaded — from the sharpest data available.
+  // Slope percent at a point as drawn, or null if it isn't loaded.
   function getSlopeAt(lng, lat) {
     const v = slopeValueAt(lng, lat);
     return v === undefined || v === NO_DATA ? null : v / 10;
@@ -538,9 +579,6 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const STRIPE_FRAMES = 8;
   const pendingDisplay = new Map(); // `${z}:${x}:${y}` → { z, x, y }
 
-  function drawingZoom() {
-    return Math.min(DETAIL_ZOOM, Math.max(DISPLAY_MIN_ZOOM, Math.floor(map.getZoom() + 1)));
-  }
 
   let pendingSyncQueued = false;
   function syncPendingLayer() {
@@ -618,10 +656,10 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         try {
           if (z >= DETAIL_ZOOM) {
             const grid = await getAnalysisGrid(DETAIL_ZOOM, x, y, signal);
-            return signal.aborted || !grid ? null : colorizeGridUpsampled(grid);
+            return signal.aborted || !grid ? null : encodeGridUpsampled(grid);
           }
           const grid = await getDisplayGrid(z, x, y, signal);
-          return signal.aborted || !grid ? null : colorizeGrid(grid);
+          return signal.aborted || !grid ? null : encodeGrid(grid);
         } finally {
           pendingDisplay.delete(key);
           syncPendingLayer();
@@ -645,7 +683,16 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         // No fade: tiles fading up from transparent read as briefly flatter than they are.
         // Full opacity: the ramp's own per-stop alpha already lets the basemap read through at low
         // slopes; an extra layer-wide reduction made 20–40% nearly invisible on the dark basemap.
-        paint: { 'raster-emissive-strength': 1, 'raster-fade-duration': 0 },
+        // Colors are applied on the GPU per screen pixel: tiles carry encoded slope (red channel,
+        // 0–255 ↔ 0–ENCODE_MAX_PCT %), which is linearly blended and then mapped through the ramp.
+        paint: {
+          'raster-emissive-strength': 1,
+          'raster-fade-duration': 0,
+          'raster-resampling': 'linear',
+          'raster-color-mix': [ENCODE_MAX_PCT, 0, 0, 0],
+          'raster-color-range': [0, ENCODE_MAX_PCT],
+          'raster-color': SLOPE_RASTER_COLOR,
+        },
       });
     }
     addStripeImages();
