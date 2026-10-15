@@ -1,4 +1,5 @@
 import { Popover, PopoverTrigger, PopoverPanel } from '@lukeanill/ui/components/animate-ui/components/base/popover';
+import { Slider } from '@lukeanill/ui/components/slider';
 import iconSwatchesLight from './assets/theme/swatches-light-icon.svg';
 import iconSwatchesDark from './assets/theme/swatches-dark-icon.svg';
 import imgMapDark from './assets/theme/map-dark.jpg';
@@ -62,7 +63,15 @@ function MapThumb({ theme }) {
   );
 }
 
-// onChange receives a partial theme ({ map } or { slope }).
+// The design-system slider, recolored for the glass: a faint track, filled with the selected-ring color.
+const SLIDER_COLORS = {
+  '--muted': 'var(--glass-tint)',
+  '--color-muted': 'var(--glass-tint)',
+  '--primary': 'var(--glass-selected)',
+  '--color-primary': 'var(--glass-selected)',
+};
+
+// onChange receives a partial theme ({ map }, { slope } or { opacity }).
 export default function ThemeMenu({ theme, onChange }) {
   return (
     <Popover>
@@ -119,6 +128,19 @@ export default function ThemeMenu({ theme, onChange }) {
               />
             ))}
           </div>
+        </section>
+        <section className="flex flex-col items-center gap-4">
+          <h3 className={LABEL}>OPACITY</h3>
+          <Slider
+            className="w-[138px]"
+            style={SLIDER_COLORS}
+            min={10}
+            max={100}
+            step={5}
+            value={[Math.round(theme.opacity * 100)]}
+            onValueChange={(v) => onChange({ opacity: (Array.isArray(v) ? v[0] : v) / 100 })}
+            aria-label="Slope opacity"
+          />
         </section>
       </PopoverPanel>
     </Popover>

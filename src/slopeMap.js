@@ -66,9 +66,12 @@ export const MAP_STYLES = {
   light: 'mapbox://styles/bzyluke/cmv8hknck010t01s0digaae2t',
 };
 
-export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onParcelError, mapStyle = 'dark', slopePalette = 'rainbow' } = {}) {
+export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onParcelError, mapStyle = 'dark', slopePalette = 'rainbow', slopeOpacity = 1 } = {}) {
   let currentMapStyle = MAP_STYLES[mapStyle] ? mapStyle : 'dark';
   let currentPalette = slopePalette;
+  let currentOpacity = slopeOpacity;
+  // Fades in from FADE_OUT_ZOOM to MIN_ZOOM, up to the user's chosen layer opacity.
+  const slopeOpacityExpr = () => ['interpolate', ['linear'], ['zoom'], FADE_OUT_ZOOM, 0, MIN_ZOOM, currentOpacity];
   activeStops = paletteFor(currentMapStyle, currentPalette);
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   const els = {
@@ -1017,7 +1020,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         paint: {
           'raster-emissive-strength': 1,
           'raster-fade-duration': 0,
-          'raster-opacity': ['interpolate', ['linear'], ['zoom'], FADE_OUT_ZOOM, 0, MIN_ZOOM, 1],
+          'raster-opacity': slopeOpacityExpr(),
           'raster-resampling': 'linear',
           'raster-color-mix': [ENCODE_MAX_PCT, 0, 0, 0],
           'raster-color-range': [0, ENCODE_MAX_PCT],
@@ -1746,6 +1749,12 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     if (map.getLayer(SLOPE_LAYER_ID)) map.setPaintProperty(SLOPE_LAYER_ID, 'raster-color', rasterColorFor(activeStops));
   }
 
+  function setSlopeOpacity(opacity) {
+    if (removed || opacity === currentOpacity) return;
+    currentOpacity = opacity;
+    if (map.getLayer(SLOPE_LAYER_ID)) map.setPaintProperty(SLOPE_LAYER_ID, 'raster-opacity', slopeOpacityExpr());
+  }
+
   // ---- Background fill ----
   // Quietly fills the gaps between areas you've already loaded (e.g. Santa Monica and Los Feliz →
   // everything in between), so panning or zooming into them later shows slope straight away. A gap tile
@@ -1894,6 +1903,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   return Object.assign(map, {
     setMapStyle,
     setSlopePalette,
+    setSlopeOpacity,
     clearSelection,
     goToAddress,
     getCamera,

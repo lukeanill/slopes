@@ -206,6 +206,7 @@ function MapApp() {
       setUiMapTheme(theme.map);
     });
     mapRef.current?.setSlopePalette(theme.slope);
+    mapRef.current?.setSlopeOpacity(theme.opacity);
     return () => {
       stale = true;
     };
@@ -255,6 +256,7 @@ function MapApp() {
       onParcelError: notifyParcelError,
       mapStyle: theme.map,
       slopePalette: theme.slope,
+      slopeOpacity: theme.opacity,
     });
     mapRef.current.onFlybyInterrupted(() => setPlayingIndex(null));
     mapRef.current.setFlybyScenes(scenes, (i) => mapRef.current.flyToScene(scenes[i]));

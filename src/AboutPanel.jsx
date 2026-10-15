@@ -71,13 +71,13 @@ const STEPS = [
   },
   {
     title: 'Build the UX',
-    body: 'Finally turn all that into something a developer or agent can understand– and enjoy.',
+    body: 'Finally turn all that into something a developer or agent can understand – and enjoy.',
   },
 ];
 
 // Small print, as written in the design.
 const TERMS = [
-  { p: 'SLOPES at slopes.lukeai.space (the “Site”) is operated by Luke AI Ltd (“we”, “us”, “our”), a company registered in England and Wales under company number [number], with its registered office at [registered office address].' },
+  { p: 'SLOPES at slopes.lukeai.space (the “Site”) is operated by Luke AI Ltd (“we”, “us”, “our”), a company registered in England and Wales under company number 16175331, with its registered office at 5 Foundry Close, Eccles, Manchester, England, M30 9QX.' },
   { p: 'These terms apply to your use of the Site. By using it, you agree to them. If you don’t agree, please don’t use the Site.' },
   { h: '1. Ownership' },
   { p: 'The Site and its content, including the design, code, text, graphics and the SLOPES name, belong to Luke AI Ltd, unless stated otherwise. © 2026 Luke AI Ltd. All rights reserved.' },
@@ -234,7 +234,7 @@ export default function AboutPanel({ onOpenChange }) {
                       <div className="flex flex-col gap-2">
                         <p style={SANS_BOLD}>Made by Luke &amp; Claude.</p>
                         <p className="opacity-75" style={SANS}>
-                          An AI native designer. On a mission to craft 100 diverse, yet meaningful, AI prototypes. Backed by a highly themable AI developed design system,.
+                          An AI native designer. On a mission to craft 100 diverse, yet meaningful, AI prototypes. Backed by a highly themable AI developed design system.
                         </p>
                       </div>
                       <a href="https://uk.linkedin.com/in/lukeillidge" target="_blank" rel="noopener noreferrer" className="w-fit underline underline-offset-2 hover:opacity-80" style={SANS_BOLD}>
@@ -243,7 +243,7 @@ export default function AboutPanel({ onOpenChange }) {
                     </div>
                     <div className="flex flex-col gap-5 py-10 opacity-75" style={SANS}>
                       <p className="text-[12px] leading-[1.4] tracking-[0.12px]">
-                        Copywright, 2026. Luke AI Ltd.
+                        Copyright 2026. Luke AI Ltd.
                         <br />
                         Registered in England and Wales.
                       </p>
