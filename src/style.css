@@ -1,6 +1,23 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Overpass:wght@400;500;600&family=Staatliches&display=swap');
 @import 'mapbox-gl/dist/mapbox-gl.css';
 
+/* Migra: the design system ships the Extralight cuts (200, regular + italic); the About headings
+   also need Extrabold. */
+@font-face {
+  font-family: 'Migra';
+  src: url('./assets/fonts/migra-extrabold.ttf') format('truetype');
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Migra';
+  src: url('./assets/fonts/migra-extrabold-italic.otf') format('opentype');
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+}
+
 :root {
   --ink: #0e1613;
   --panel: #121b18;

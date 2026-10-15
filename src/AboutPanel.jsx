@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import arrowIcon from './assets/about/arrow.svg';
 
-// "About" overlay from the 100DS Figma frame (node 2369:223): a glass pill top-right that opens
-// two frosted panels over the map. The frame's ABC Diatype Mono / Söhne / Google Sans Code
-// aren't in the design system's font set, so the closest loaded faces stand in: Geist Mono for
-// the mono headings and steps, Inter Light for body copy.
-const MONO = { fontFamily: "'Geist Mono', ui-monospace, monospace", fontWeight: 300 };
+// "About" overlay from the SLOPES Figma (node 2:291): a glass pill top-right that opens two frosted
+// panels over the map. Headings in Migra (Extralight from the design system, Extrabold registered
+// in style.css); Söhne → Inter, as elsewhere in the app.
+const SERIF = { fontFamily: "'Migra', Georgia, serif", fontFeatureSettings: '"calt" 0, "liga" 0' };
 const SANS = { fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 300 };
+const SANS_BOLD = { fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 500 };
 const EASE_OUT = [0.22, 1, 0.36, 1];
 
 const BENEFITS = [
@@ -30,7 +31,7 @@ const BENEFITS = [
 
 function Link({ href, children }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-[var(--about-accent)]">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:opacity-80">
       {children}
     </a>
   );
@@ -38,7 +39,7 @@ function Link({ href, children }) {
 
 const STEPS = [
   {
-    title: '1. Get elevation data',
+    title: 'Get elevation data',
     body: (
       <>
         Usually a DEM or LiDAR-derived dataset. In the US, USGS 3DEP provides DEMs from roughly 30m down to 1m
@@ -47,7 +48,7 @@ const STEPS = [
     ),
   },
   {
-    title: '2. Get parcel geometry',
+    title: 'Get parcel geometry',
     body: (
       <>
         From county GIS systems or a commercial parcel-data provider. For example,{' '}
@@ -57,37 +58,62 @@ const STEPS = [
     ),
   },
   {
-    title: '3. Do the GIS work',
-    body: (
-      <>
-        Match the parcel polygon to the elevation raster → calculate slope for the underlying cells → clip it to the
-        parcel → aggregate the results. Creating slope from elevation is itself a GIS analysis step; tools such as
-        ArcGIS expose dedicated slope-processing workflows.{' '}
-        <Link href="https://support.esri.com/en-us/knowledge-base/how-to-create-a-slope-map-using-las-files-in-arcgis-pro-000034008">
-          Esri Support
-        </Link>
-      </>
-    ),
+    title: 'Do the GIS work',
+    body: 'Match the parcel polygon to the elevation raster → calculate slope for the underlying cells → clip it to the parcel → aggregate the results. Creating slope from elevation is itself a GIS analysis step.',
   },
   {
-    title: '4. Invent the property metrics',
-    body: (
-      <>
-        The platform still needs to decide what actually matters:
-        <br />
-        min slope · max slope · median · % &gt; 30% · dominant slope · distribution
-      </>
-    ),
+    title: 'Invent the property metrics',
+    body: 'The platform still needs to decide what actually matters: min slope · max slope · median · % > 30% · dominant slope · distribution',
   },
   {
-    title: '5. Build infrastructure',
+    title: 'Build infrastructure',
     body: 'Process millions of parcels, cache results, handle different DEM resolutions/coverage, update datasets and expose everything through their own API/database.',
   },
   {
-    title: '6. Build the UX',
-    body: 'Finally turn all that into something a developer or agent can actually understand.',
+    title: 'Build the UX',
+    body: 'Finally turn all that into something a developer or agent can understand– and enjoy.',
   },
 ];
+
+// Small print, as written in the design.
+const TERMS = [
+  { p: 'SLOPES at slopes.lukeai.space (the “Site”) is operated by Luke AI Ltd (“we”, “us”, “our”), a company registered in England and Wales under company number [number], with its registered office at [registered office address].' },
+  { p: 'These terms apply to your use of the Site. By using it, you agree to them. If you don’t agree, please don’t use the Site.' },
+  { h: '1. Ownership' },
+  { p: 'The Site and its content, including the design, code, text, graphics and the SLOPES name, belong to Luke AI Ltd, unless stated otherwise. © 2026 Luke AI Ltd. All rights reserved.' },
+  { p: 'You may not copy, reproduce, modify, distribute or create derivative works from any part of the Site without our written permission.' },
+  { h: '2. Permitted use' },
+  { p: 'You may use the Site for personal, non-commercial purposes. You agree not to:' },
+  {
+    list: [
+      'use it for anything unlawful or harmful',
+      'try to hack, disrupt, scrape or reverse-engineer it',
+      'copy its design or functionality to build a competing product',
+      'misrepresent your connection to us or the Site',
+    ],
+  },
+  { h: '3. Third-party content' },
+  { p: 'Some parts of the Site use third-party tools, libraries or content. These remain the property of their respective owners and are subject to their own licences.' },
+  { h: '4. Your content and AI output' },
+  { p: 'If you submit content to the Site, you keep ownership of it. You give us permission to use it only as needed to run the Site. Any AI-generated output is provided “as is” and may be inaccurate, so please check anything important before relying on it.' },
+  { h: '5. Governing law' },
+  { p: 'These terms are governed by the laws of England and Wales. The courts of England and Wales have exclusive jurisdiction.' },
+];
+
+// A column heading in the display serif, with one italic word, and the long down-arrow beneath it.
+function ColumnHeading({ children }) {
+  return (
+    <div className="flex w-full flex-col gap-6 pb-6">
+      <p className="max-w-[366px] text-[32px] leading-[1.4] sm:text-[40px]" style={{ ...SERIF, fontWeight: 200 }}>
+        {children}
+      </p>
+      {/* Rotating doesn't change layout size, so reserve the arrow's drawn height. */}
+      <div className="h-[70px] px-10">
+        <img src={arrowIcon} alt="" width={64.75} height={11.05} className="theme-mono-icon block origin-left translate-x-[5.5px] rotate-90" />
+      </div>
+    </div>
+  );
+}
 
 // Panels rise in one after the other, un-blurring as they land; they leave together, quicker.
 const panelVariants = {
@@ -160,11 +186,13 @@ export default function AboutPanel({ onOpenChange }) {
               onClick={(e) => e.target === e.currentTarget && setOpen(false)}
             >
               <motion.section custom={0} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-10 text-[var(--glass-fg)]`}>
-                <div className="flex flex-col items-center gap-6 text-center">
-                  <h2 className="text-[22px] leading-[1.6] sm:text-[28px]" style={MONO}>
-                    Parcel-level slope
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <h2 className="text-[38px] leading-[1.4] sm:text-[52px]" style={SERIF}>
+                    <span style={{ fontWeight: 200 }}>Parcel-level</span>
                     <br />
-                    intelligence
+                    <span style={{ fontWeight: 800 }}>
+                      <em>slope</em> intelligence
+                    </span>
                   </h2>
                   <p className="text-[15px] leading-[1.4] tracking-[0.15px]" style={SANS}>
                     Unearth real build potential
@@ -172,7 +200,7 @@ export default function AboutPanel({ onOpenChange }) {
                 </div>
                 <div className="grid w-full grid-cols-1 gap-4 text-center sm:grid-cols-2 sm:gap-10" style={SANS}>
                   {BENEFITS.map((b) => (
-                    <div key={b.title} className="flex flex-col items-center justify-center gap-2 rounded-[14px] border border-[var(--glass-tint-border)] bg-[var(--glass-tint)] p-6">
+                    <div key={b.title} className="flex flex-col items-center justify-center gap-2 rounded-[14px] bg-[var(--glass-tint)] p-6">
                       <p className="text-[14px] leading-[1.4] tracking-[0.14px]">{b.title}</p>
                       <p className="text-[13px] leading-[1.4] tracking-[0.13px] opacity-65">{b.body}</p>
                     </div>
@@ -180,31 +208,63 @@ export default function AboutPanel({ onOpenChange }) {
                 </div>
               </motion.section>
 
-              <motion.section custom={1} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-10 text-[var(--glass-fg)]`}>
-                <div className="flex flex-col items-center gap-4 text-center">
-                  <div className="flex gap-2" style={SANS}>
-                    {['Private beta', 'Nerds only'].map((tag) => (
-                      <span key={tag} className="rounded-lg bg-[#2c0433] px-2.5 py-1 text-white text-[13px] leading-[1.6] tracking-[1.04px]">
-                        {tag}
-                      </span>
-                    ))}
+              <motion.section custom={1} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-12 text-[var(--glass-fg)] sm:gap-16`}>
+                <span className="rounded-lg bg-white/80 px-2.5 py-1 text-[15px] leading-[1.6] tracking-[1.2px] text-black" style={SANS_BOLD}>
+                  Private beta
+                </span>
+                <div className="grid w-full grid-cols-1 gap-16 sm:grid-cols-2 sm:gap-20">
+                  <div className="flex flex-col gap-6">
+                    <ColumnHeading>
+                      You <em>could</em> make this from scratch, yourself.
+                    </ColumnHeading>
+                    <div className="flex flex-col gap-4 text-[15px] leading-[1.4] tracking-[0.15px]">
+                      {STEPS.map((step) => (
+                        <div key={step.title} className="flex flex-col gap-2">
+                          <p style={SANS_BOLD}>{step.title}</p>
+                          <p className="opacity-75" style={SANS}>{step.body}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <h2 className="text-[20px] leading-[1.6] sm:text-[23px]" style={MONO}>Here’s the deal.</h2>
-                  <p className="text-[13px] leading-[1.4] tracking-[0.13px] opacity-65" style={SANS}>
-                    Tap a button above and explore.
-                    <br />
-                    Or, do it the good ‘ol current way...
-                  </p>
+                  <div className="flex flex-col gap-6">
+                    <ColumnHeading>
+                      Or we <em>will</em> make this better, and more.
+                    </ColumnHeading>
+                    <div className="flex flex-col gap-6 text-[15px] leading-[1.4] tracking-[0.15px]">
+                      <div className="flex flex-col gap-2">
+                        <p style={SANS_BOLD}>Made by Luke &amp; Claude.</p>
+                        <p className="opacity-75" style={SANS}>
+                          An AI native designer. On a mission to craft 100 diverse, yet meaningful, AI prototypes. Backed by a highly themable AI developed design system,.
+                        </p>
+                      </div>
+                      <a href="https://uk.linkedin.com/in/lukeillidge" target="_blank" rel="noopener noreferrer" className="w-fit underline underline-offset-2 hover:opacity-80" style={SANS_BOLD}>
+                        Get in touch
+                      </a>
+                    </div>
+                    <div className="flex flex-col gap-5 py-10 opacity-75" style={SANS}>
+                      <p className="text-[12px] leading-[1.4] tracking-[0.12px]">
+                        Copywright, 2026. Luke AI Ltd.
+                        <br />
+                        Registered in England and Wales.
+                      </p>
+                      <div className="text-[8px] leading-[1.4] tracking-[0.08px]">
+                        {TERMS.map((t, i) =>
+                          t.list ? (
+                            <ul key={i} className="list-disc">
+                              {t.list.map((item) => (
+                                <li key={item} className="ms-3">{item}</li>
+                              ))}
+                            </ul>
+                          ) : t.h ? (
+                            <p key={i} className="mt-[1.4em]">{t.h}</p>
+                          ) : (
+                            <p key={i}>{t.p}</p>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <ol className="flex w-full max-w-[795px] flex-col gap-4 text-[13px] leading-[2] text-[var(--glass-fg)] sm:text-[14px]" style={MONO}>
-                  {STEPS.map((step) => (
-                    <li key={step.title}>
-                      <span className="text-[var(--about-accent)]">{step.title}</span>
-                      <br />
-                      {step.body}
-                    </li>
-                  ))}
-                </ol>
               </motion.section>
             </div>
           </motion.div>
