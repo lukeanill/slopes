@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Overpass:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Overpass:wght@400;500;600&family=Staatliches&display=swap');
 @import 'mapbox-gl/dist/mapbox-gl.css';
 
 :root {
@@ -10,6 +10,52 @@
   --bar-bg: #ffffff;
   --bar-text: #1a1a1a;
   --bar-line: #d8d8d8;
+
+  /* Glass UI tokens. Dark map → light text on dark glass (default); light map → the inverse.
+     Set on <html data-theme> so portaled UI (menus, sheet, tooltips) follows too. */
+  --glass-bg: rgba(16, 15, 15, 0.45);
+  --glass-bg-hover: rgba(16, 15, 15, 0.6);
+  --glass-bg-panel: rgba(16, 15, 15, 0.55); /* larger text-heavy surfaces: sheet, About, menus */
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-highlight: rgba(255, 255, 255, 0.18);
+  --glass-shadow: rgba(0, 0, 0, 0.25);
+  --glass-fg: #ffffff;
+  --glass-fg-muted: rgba(255, 255, 255, 0.6);
+  --glass-tint: rgba(255, 255, 255, 0.08); /* inner surfaces / hover rows */
+  --glass-tint-border: rgba(255, 255, 255, 0.15);
+  --glass-selected: #ffffff; /* theme menu's selected-option ring */
+  --about-accent: #dd7ff4;
+  --bottom-fade: rgba(44, 46, 63, 0.85);
+  --control-bg: rgba(5, 5, 5, 0.3); /* bottom-right map controls */
+  --control-bg-hover: rgba(5, 5, 5, 0.45);
+}
+:root[data-theme="light"] {
+  --glass-bg: rgba(255, 255, 255, 0.2);
+  --glass-bg-hover: rgba(255, 255, 255, 0.42);
+  --glass-bg-panel: rgba(255, 255, 255, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-highlight: rgba(255, 255, 255, 0.55);
+  --glass-shadow: rgba(0, 0, 0, 0.12);
+  --glass-fg: #111111;
+  --glass-fg-muted: rgba(0, 0, 0, 0.55);
+  --glass-tint: rgba(0, 0, 0, 0.06);
+  --glass-tint-border: rgba(0, 0, 0, 0.1);
+  --glass-selected: #000000;
+  --about-accent: #8a2aa3;
+  --bottom-fade: rgba(235, 230, 229, 0.7);
+  --control-bg: rgba(255, 255, 255, 0.2);
+  --control-bg-hover: rgba(255, 255, 255, 0.42);
+}
+
+/* Shared glass surface. In the components layer so Tailwind utilities (hover:bg-…, blur, a
+   heavier panel background) still override it. */
+@layer components {
+  .glass {
+    background-color: var(--glass-bg);
+    color: var(--glass-fg);
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 4px 16px var(--glass-shadow);
+  }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
@@ -18,7 +64,7 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 #bottom-fade {
   position: fixed; left: 0; right: 0; bottom: 0; height: 140px; z-index: 4;
   pointer-events: none;
-  background: linear-gradient(to bottom, rgba(44, 46, 63, 0) 0%, rgba(44, 46, 63, 0.85) 100%);
+  background: linear-gradient(to bottom, transparent 0%, var(--bottom-fade) 100%);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
   mask-image: linear-gradient(to bottom, transparent 0%, black 100%);
@@ -31,19 +77,21 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 }
 .map-control-btn {
   width: 40px; height: 40px; padding: 0; border: none; cursor: pointer;
-  background: rgba(5, 5, 5, 0.3); backdrop-filter: blur(10px);
+  background: var(--control-bg); backdrop-filter: blur(10px);
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s ease, opacity 0.15s ease;
 }
-.map-control-btn:hover { background: rgba(5, 5, 5, 0.45); }
+.map-control-btn:hover { background: var(--control-bg-hover); }
+.map-control-btn svg [fill="white"] { fill: var(--glass-fg); }
+.map-control-btn svg [stroke="white"] { stroke: var(--glass-fg); }
 .map-control-btn:active { opacity: 0.6; }
 .map-control-btn svg { width: 28px; height: 28px; display: block; }
 #reset-bearing { border-radius: 999px; }
 #zoom-level {
   width: 40px; height: 40px; border-radius: 999px;
-  background: rgba(5, 5, 5, 0.3); backdrop-filter: blur(10px);
+  background: var(--control-bg); backdrop-filter: blur(10px);
   display: flex; align-items: center; justify-content: center;
-  color: #ffffff; font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--glass-fg); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
   user-select: none;
 }
 .map-control-zoom-pill { display: flex; flex-direction: column; gap: 1px; width: 100%; }
@@ -60,10 +108,10 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 .status-pill {
   display: flex; align-items: center; justify-content: center;
   padding: 10px 18px; border-radius: 999px;
-  background: rgba(16, 15, 15, 0.45); border: 1px solid rgba(255, 255, 255, 0.25);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 16px rgba(0, 0, 0, 0.25);
+  background: var(--glass-bg); border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 4px 16px var(--glass-shadow);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  color: #ffffff; font-family: 'DM Sans', sans-serif; font-size: 14px; white-space: nowrap;
+  color: var(--glass-fg); font-family: 'DM Sans', sans-serif; font-size: 14px; white-space: nowrap;
 }
 
 #bottom-bar { display: none !important; } /* hidden for now — keep the DOM/JS wiring intact for later */
@@ -72,6 +120,9 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   cursor: crosshair;
 }
 .slope-tooltip-panel [data-slot="tooltip-arrow"] { display: none; }
+/* While an area with no slope yet is loading, the map is held still (see setLocked). */
+.slope-locked .mapboxgl-canvas-container.mapboxgl-interactive { cursor: progress; }
+.map-control-btn:disabled { opacity: 0.45; cursor: default; }
 
 #auth-gate {
   position: fixed; inset: 0; z-index: 10; background: var(--ink);
@@ -162,7 +213,12 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   opacity: 0; filter: blur(4px); pointer-events: none;
   transition-delay: 0s;
 }
-#app:is([data-search-open], [data-sheet-open], [data-about-open]) #map-controls { translate: 16px 0; }
+#app[data-flyby-playing] :is(#map-controls, .about-button, .search-control) {
+  opacity: 0; filter: blur(4px); pointer-events: none;
+  transition-delay: 0s;
+}
+#app:is([data-search-open], [data-sheet-open], [data-about-open], [data-flyby-playing]) #map-controls { translate: 16px 0; }
+#app[data-flyby-playing] :is(.about-button, .search-control) { translate: 0 -12px; }
 #app:is([data-search-open], [data-sheet-open], [data-about-open]) .status-slot,
 #app:is([data-search-open], [data-sheet-open]) .about-button,
 #app:is([data-sheet-open], [data-about-open]) .search-control { translate: 0 -12px; }
@@ -180,4 +236,29 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   position: fixed; z-index: 7; width: 12px; height: 12px; margin: -6px 0 0 -6px;
   border: 2px solid #ffffff; border-radius: 999px; pointer-events: none;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* Numbered flyby scene markers (same glass as the flyby control). Hidden while the flyby plays
+   so the recording is just the map. */
+.flyby-marker {
+  width: 28px; height: 28px; padding: 0; border-radius: 999px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--glass-bg-panel); border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 2px 8px var(--glass-shadow);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  color: var(--glass-fg); font-family: 'Staatliches', sans-serif; font-size: 15px; line-height: 1;
+  transition: background-color 0.15s ease;
+}
+.flyby-marker:hover { background: var(--glass-bg-hover); }
+/* visibility, not opacity — Mapbox writes an inline opacity on markers for terrain occlusion. */
+.flyby-playing .flyby-marker { visibility: hidden; }
+
+/* White single-color icon files flip to black on light glass. */
+:root[data-theme="light"] .theme-mono-icon { filter: invert(1); }
+
+/* Frozen picture of the old basemap, shown over the map while a style swap loads underneath and
+   then dissolved away (see setMapStyle in slopeMap.js). */
+.map-freeze {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  pointer-events: auto;
 }

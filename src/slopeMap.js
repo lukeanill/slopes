@@ -1,5 +1,5 @@
 import mapboxgl from 'mapbox-gl';
-import { loadGrid, saveGrid } from './slopeStore.js';
+import { listGridKeys, loadGrid, saveGrid } from './slopeStore.js';
 import iconPlusSimple from './icons/PlusSimple.svg?raw';
 import iconMinusSimple from './icons/MinusSimple.svg?raw';
 import iconNorth from './icons/North.svg?raw';
@@ -20,37 +20,56 @@ import iconCrosshairSimple from './icons/CrosshairSimple.svg?raw';
 export const MAP_MIN_ZOOM = 4.5;
 export const SLOPE_MIN_ZOOM = 11;
 
-// Exact spec stops: [percent, r, g, b, alpha], incl. the 0% anchor — a near-invisible
-// rgba(0,0,0,0.04) wash rather than true transparency. Colors interpolate smoothly across all of
-// them; low single-digit percents stay effectively invisible since alpha only reaches .04 there.
-export const RAMP_STOPS = [
-  [0, 0, 0, 0, 0.04],       // rgba(0,0,0,0.04)
-  // 20–40% alphas raised (were .40/.50/.60): their dark purples/blues blended half-transparent
-  // over the dark basemap read as barely-there murk. Stops above nudged up to keep a steady climb.
-  [20, 128, 71, 143, 0.55], // rgba(128,71,143,0.55)
-  [30, 104, 87, 180, 0.65], // rgba(104,87,180,0.65)
-  [40, 72, 110, 164, 0.72], // rgba(72,110,164,0.72)
-  [50, 71, 156, 130, 0.78], // rgba(71,156,130,0.78)
-  [60, 128, 189, 100, 0.85],// rgba(128,189,100,0.85)
-  [70, 193, 202, 71, 0.92], // rgba(193,202,71,0.92)
-  [80, 196, 130, 89, 1.00], // rgba(196,130,89,1)
-  [90, 161, 59, 59, 1.00],  // rgba(161,59,59,1)
-  [110, 161, 59, 59, 1.00], // holds the same red up to 110%…
-  [150, 112, 28, 36, 1.00], // …then deepens gradually to a darker red by 150% (no visible edge)
-];
+// Slope palettes from the SLOPES Figma ("New Slope Gradients"): Rainbow, Muted and Beam, each with
+// a version tuned for the dark map and one for the light map — they share the steep end and differ
+// in the faint low-slope colors, which have to read against that basemap. Design stops are at
+// 0/20/30/…/90/100%; the top color is held out to 150% so every palette has one stop per
+// BAND_DESCRIPTORS entry. All fade to fully transparent at 0%.
+const PCTS = [0, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+const palette = (colors) => {
+  const stops = colors.map((c, i) => [PCTS[i], ...c]);
+  return [...stops, [150, ...colors[colors.length - 1]]];
+};
+const STEEP = {
+  rainbow: [[15, 158, 130, 1], [109, 192, 87, 1], [191, 202, 29, 1], [208, 126, 80, 1], [175, 49, 55, 1], [175, 49, 55, 1]],
+  muted: [[251, 245, 183, 1], [250, 223, 153, 1], [250, 200, 122, 1], [245, 165, 86, 1], [237, 129, 52, 1], [237, 128, 51, 1]],
+  beam: [[190, 47, 101, 1], [215, 77, 80, 1], [236, 111, 59, 1], [249, 148, 43, 1], [250, 197, 30, 1], [250, 197, 30, 1]],
+};
+export const SLOPE_PALETTES = {
+  dark: {
+    rainbow: palette([[67, 42, 125, 0], [67, 42, 125, 0.4], [107, 86, 187, 0.6], [61, 111, 168, 0.8], ...STEEP.rainbow]),
+    muted: palette([[72, 131, 128, 0], [72, 131, 128, 0.4], [177, 234, 202, 0.6], [228, 241, 188, 0.8], ...STEEP.muted]),
+    beam: palette([[41, 24, 84, 0], [41, 24, 84, 0.4], [65, 1, 145, 0.6], [138, 7, 138, 0.8], ...STEEP.beam]),
+  },
+  light: {
+    rainbow: palette([[162, 131, 166, 0], [162, 131, 166, 0.4], [107, 86, 187, 0.6], [61, 111, 168, 0.8], ...STEEP.rainbow]),
+    muted: palette([[184, 226, 223, 0], [184, 226, 223, 0.4], [177, 234, 202, 0.6], [228, 241, 188, 0.8], ...STEEP.muted]),
+    beam: palette([[97, 78, 146, 0], [97, 78, 146, 0.4], [65, 1, 145, 0.6], [138, 7, 138, 0.8], ...STEEP.beam]),
+  },
+};
+const paletteFor = (mapStyle, name) => SLOPE_PALETTES[mapStyle]?.[name] ?? SLOPE_PALETTES.dark.rainbow;
 
-// The ramp as a Mapbox `raster-color` expression over the layer's decoded slope percent.
-export const SLOPE_RASTER_COLOR = [
-  'interpolate', ['linear'], ['raster-value'],
-  ...RAMP_STOPS.flatMap(([pct, r, g, b, a]) => [pct, `rgba(${r}, ${g}, ${b}, ${a})`]),
-];
+// The palette currently on the map. Module-level so UI that colors by slope (the parcel chart,
+// hover chip, badges) always matches the layer.
+let activeStops = SLOPE_PALETTES.dark.rainbow;
+export function getRampStops() {
+  return activeStops;
+}
 
-// The ramp's colors left to right, as a CSS gradient (full opacity) — for UI that previews it.
-export const SLOPE_RAMP_GRADIENT = `linear-gradient(90deg, ${RAMP_STOPS.slice(1)
-  .map(([, r, g, b]) => `rgb(${r}, ${g}, ${b})`)
-  .join(', ')})`;
+// A palette as a Mapbox `raster-color` expression over the layer's decoded slope percent.
+function rasterColorFor(stops) {
+  return ['interpolate', ['linear'], ['raster-value'], ...stops.flatMap(([pct, r, g, b, a]) => [pct, `rgba(${r}, ${g}, ${b}, ${a})`])];
+}
 
-export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onParcelError } = {}) {
+export const MAP_STYLES = {
+  dark: 'mapbox://styles/bzyluke/cmv97y6cz002m01qu25z7awxg', // Slopes Dark (flat land)
+  light: 'mapbox://styles/bzyluke/cmv8hknck010t01s0digaae2t',
+};
+
+export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onParcelError, mapStyle = 'dark', slopePalette = 'rainbow' } = {}) {
+  let currentMapStyle = MAP_STYLES[mapStyle] ? mapStyle : 'dark';
+  let currentPalette = slopePalette;
+  activeStops = paletteFor(currentMapStyle, currentPalette);
   const token = import.meta.env.VITE_MAPBOX_TOKEN;
   const els = {
     zoomLevel: document.getElementById('zoom-level'),
@@ -75,43 +94,113 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     pitch: 0,
   };
 
-  const STYLE_DARK = 'mapbox://styles/bzyluke/cmtn58lr700ci01pmbvx4b8h8';
-
   const MAX_ZOOM = 20;
 
   // DOM listeners/timers here outlive the map unless torn down with it — React StrictMode mounts,
   // removes, and re-mounts in dev, and the first instance's leftovers kept driving the shared
   // controls (zoom buttons, zoom readout, status pill) and erroring against the removed map.
   const listeners = new AbortController();
-  const listen = (el, type, fn) => el.addEventListener(type, fn, { signal: listeners.signal });
+  const listen = (el, type, fn, opts) => el.addEventListener(type, fn, { ...opts, signal: listeners.signal });
 
   const map = new mapboxgl.Map({
     container: 'map',
-    style: STYLE_DARK,
+    style: MAP_STYLES[currentMapStyle],
     minZoom: MAP_MIN_ZOOM,
     maxZoom: MAX_ZOOM,
     ...DEFAULT_CAMERA,
   });
 
-  // This is a Standard-based style, so its basemap labels live in an import fragment —
+  // Both styles are Standard-based, so their basemap labels live in an import fragment —
   // there's no setPaintProperty/setLayoutProperty access to those layers, only the fixed set
   // of config toggles the style exposes. text-transform/letter-spacing aren't among them
   // (Studio-only); label color and hiding transit labels are. The dark style needs light labels
-  // for contrast.
+  // for contrast; the light style keeps its own.
   function applyLabelStyling() {
-    map.setConfigProperty('basemap', 'colorPlaceLabels', '#ffffff');
-    map.setConfigProperty('basemap', 'colorRoadLabels', '#ffffff');
+    if (currentMapStyle === 'dark') {
+      map.setConfigProperty('basemap', 'colorPlaceLabels', '#ffffff');
+      map.setConfigProperty('basemap', 'colorRoadLabels', '#ffffff');
+    }
     map.setConfigProperty('basemap', 'showTransitLabels', false);
   }
 
+  // One land color everywhere, at every zoom. Mapbox Standard varies the ground by itself — it
+  // lightens built-up areas zoomed out, draws countryside from its own land-cover data (which
+  // ignores the style's land color), and adds land-use areas (parks, airports, farmland…) — and
+  // all of that showed through the semi-transparent low slopes as shapes and tone shifts. So a
+  // flat layer in the style's own land color covers Standard's ground (the 'bottom' slot sits above
+  // its land, land-use and water polygons but below roads, buildings and labels), and water is
+  // redrawn on top of it from Mapbox Streets in the style's water color. Both read their colors
+  // from the active style's config, so Studio stays the source of truth for dark and light.
+  const FLAT_LAND_ID = 'flat-land';
+  const FLAT_WATER_ID = 'flat-water';
+  // A background layer (no source needed) in the 'bottom' slot — the same layers the uploadable
+  // styles in mapbox-styles/ carry, so this only adds them to styles that don't have them yet.
+  // Colors are read live from the basemap's config, so they always follow Studio's land/water.
+  const LAND_COLOR = ['config', 'colorLand', 'basemap'];
+  const WATER_COLOR = ['config', 'colorWater', 'basemap'];
+  // App-side ground colors per map, applied over whatever the style's flat layers carry (keep these
+  // in step with the style in Studio, or remove an entry to use the style's own colors).
+  const GROUND_COLORS = {
+    // Buildings: Standard's building color (its lighting shades it, so it renders a little
+    // differently from the value itself).
+    // Sky: dark haze at the horizon that blends into the land, near-black above, faint stars.
+    dark: {
+      land: 'hsl(206, 8%, 18%)',
+      water: 'hsl(204, 13%, 27%)',
+      buildings: '#FFE0A8', // warm on purpose: night lighting tints buildings blue, so this renders neutral grey
+      sky: {
+        color: 'hsl(206, 10%, 14%)',
+        'high-color': 'hsl(214, 30%, 9%)',
+        'space-color': 'hsl(220, 30%, 4%)',
+        'horizon-blend': 0.08,
+        'star-intensity': 0.35,
+      },
+    },
+  };
+  function applyGroundColors() {
+    const colors = GROUND_COLORS[currentMapStyle];
+    if (!colors) return;
+    if (map.getLayer(FLAT_LAND_ID)) map.setPaintProperty(FLAT_LAND_ID, 'background-color', colors.land);
+    if (map.getLayer(FLAT_WATER_ID)) map.setPaintProperty(FLAT_WATER_ID, 'fill-color', colors.water);
+    if (colors.buildings) map.setConfigProperty('basemap', 'colorBuildings', colors.buildings);
+    if (colors.sky) map.setFog({ ...map.getFog(), ...colors.sky });
+  }
+  function addFlatGround() {
+    if (map.getLayer(FLAT_LAND_ID)) return applyGroundColors();
+    map.addLayer({
+      id: FLAT_LAND_ID,
+      type: 'background',
+      slot: 'bottom',
+      paint: { 'background-color': LAND_COLOR, 'background-emissive-strength': 1 }, // emissive: unaffected by lighting
+    });
+    if (map.getSource('composite') && !map.getLayer(FLAT_WATER_ID)) {
+      map.addLayer({
+        id: FLAT_WATER_ID,
+        type: 'fill',
+        source: 'composite',
+        'source-layer': 'water',
+        slot: 'bottom',
+        paint: { 'fill-color': WATER_COLOR, 'fill-emissive-strength': 1 },
+      });
+    }
+    applyGroundColors();
+  }
+
   // Mapbox Standard auto-selects a lightPreset based on real-world time of day if left unset,
-  // which made the map's look drift depending on when you opened it — pin it explicitly.
+  // which made the map's look drift depending on when you opened it — pin it explicitly. The dark
+  // map uses night lighting so buildings and photo-textured landmarks (Dodger Stadium, the Aon
+  // Center…) render dark; the land and water are the app's own emissive layers (addFlatGround),
+  // so night lighting no longer dims them away from the picked colors. This also re-runs after
+  // setMapStyle swaps the style.
   map.on('style.load', () => {
-    map.setConfigProperty('basemap', 'lightPreset', 'night');
+    map.setConfigProperty('basemap', 'lightPreset', currentMapStyle === 'dark' ? 'night' : 'day');
     applyLabelStyling();
+    addFlatGround();
     addSlopeLayer(); // added first so parcels/selection/preview layers draw above it
     addParcelLayer();
     addSelectionLayer();
+    map.getSource(SELECTED_FILL_SRC_ID)?.setData(selectedFC);
+    map.getSource(SELECTED_LINE_SRC_ID)?.setData(selectedFC);
     addPreviewLayer();
     scheduleParcelRefresh(0);
   });
@@ -153,9 +242,9 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const DEM_URL = (z, x, y) =>
     `https://api.mapbox.com/v4/mapbox.terrain-rgb/${z}/${x}/${y}.pngraw?access_token=${mapboxgl.accessToken}`;
 
-  // Interpolates RAMP_STOPS (module scope) for a slope percent.
+  // Interpolates the active palette for a slope percent.
   function percentToColor(pct) {
-    const stops = RAMP_STOPS;
+    const stops = activeStops;
     if (pct <= stops[0][0]) return stops[0].slice(1);
     for (let i = 1; i < stops.length; i++) {
       if (pct <= stops[i][0]) {
@@ -168,15 +257,15 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return stops[stops.length - 1].slice(1);
   }
   // 4 tiers matching the ramp's color families — used for the popover's summary badge.
-  // One descriptor per RAMP_STOPS entry.
+  // One descriptor per palette stop (every palette has the same number of stops).
   const BAND_DESCRIPTORS = ['flat', 'minor', 'minor', 'minor', 'moderate', 'moderate', 'moderate', 'steep', 'steep', 'very steep', 'very steep'];
   function bandSolidColor(idx) {
     if (idx === 0) return '#424563';
-    const [r, g, b] = percentToColor(RAMP_STOPS[idx][0]);
+    const [r, g, b] = percentToColor(activeStops[idx][0]);
     return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
   }
   function summaryForPercent(pct) {
-    const stops = RAMP_STOPS;
+    const stops = activeStops;
     let idx = 0;
     for (let i = 0; i < stops.length; i++) if (pct >= stops[i][0]) idx = i;
     return { label: BAND_DESCRIPTORS[idx], color: bandSolidColor(idx) };
@@ -209,26 +298,38 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const SLOPE_LAYER_ID = 'slope';
   const NO_DATA = 65535; // grid sentinel for "no slope here" (a failed DEM tile) — renders transparent
 
-  // Slope is computed from high-res DEM tiles and lower-zoom display tiles average those slope
-  // values, rather than computing slope from coarser elevation — which smooths terrain and
-  // understated steepness (the same hillside read green at zoom 11 and red at zoom 14).
-  //   display z12–13 → averaged from z14 analysis tiles (~6–8 m/px here; keeps zoomed-out loads light)
-  //   display z14–15 → from z15 analysis tiles (~3–4 m/px, terrain-RGB's max). z15 carries real
-  //                    detail beyond z14 (measured: ~0.6 m mean / ~3 m max difference from an
-  //                    upsampled z14 over these hills) — capping at z14 made close zooms soft.
+  // Slope is computed from DEM tiles in a worker ("analysis" grids), at a detail level that suits
+  // the zoom you're looking at, and coarser display tiles average those slope values:
+  //   display ≤12 → averaged from z13 analysis (~16 m/px): a fresh zoom-11 view is ~¼ the DEM
+  //                 download of z14 (~10 MB rather than ~38 MB), so new areas appear in seconds
+  //   display z13 → z13 analysis itself (camera 11.5–12.5)
+  //   display z14 → z14 analysis (~8 m/px, camera 12.5–13.5)
+  //   display z15 → z15 analysis (~4 m/px, terrain-RGB's max, camera 13.5+). z15 carries real
+  //                 detail beyond z14 (measured: ~0.6 m mean / ~3 m max difference from an
+  //                 upsampled z14 over these hills) — capping at z14 made close zooms soft.
+  // Finer data reads a little steeper; it arrives silently as you zoom in, over the coarser slope
+  // already on screen. Zooming out, tiles are assembled from whatever finer slope is saved (see
+  // gridAt), so an area you've explored stays visible at every zoom without re-downloading.
   // Mapbox overscales z15 for closer zooms; those tiles' values are upsampled 3x (see encodeGridUpsampled).
   const BASE_ZOOM = 14;
   const DETAIL_ZOOM = 15;
+  const OVERVIEW_ZOOM = 13;
   const DISPLAY_MIN_ZOOM = 12; // camera zoom 11 draws 256px tiles at z12
-  const analysisZoomFor = (displayZoom) => (displayZoom >= BASE_ZOOM ? DETAIL_ZOOM : BASE_ZOOM);
+  const SOURCE_MIN_ZOOM = 5; // lowest zoom the coverage bookkeeping (saved-slope index) tracks
+  // Around the slope zoom the layer cross-fades with the camera zoom: fully visible from MIN_ZOOM,
+  // fading out to nothing by FADE_OUT_ZOOM. Between the two, only slope that's already saved is
+  // shown (nothing new is analysed below MIN_ZOOM), so zooming out of an area eases it away and
+  // zooming back in eases it back.
+  const FADE_OUT_ZOOM = 10.5;
+  const analysisZoomFor = (displayZoom) => (displayZoom >= DETAIL_ZOOM ? DETAIL_ZOOM : displayZoom >= BASE_ZOOM ? BASE_ZOOM : OVERVIEW_ZOOM);
 
-  // z14/z15 analysis grids, keyed `${z}:${x}:${y}` — the canonical slope data. Display tiles are
+  // z13–z15 analysis grids, keyed `${z}:${x}:${y}` — the canonical slope data. Display tiles are
   // derived from these, and hover/parcel lookups read them directly (a color baked into a tile
   // can't be reversed back into a percent). Stored as percent × 10 in a Uint16Array (0.1%
   // precision) — half the memory of Float32 so more of the area you've explored stays cached.
   const gridCache = new Map();
   const GRID_CACHE_LIMIT = 800;
-  // Display grids for z12/13, averaged down from analysis grids — cheap to rebuild, but cached
+  // Display grids for z12 and below, averaged down from analysis grids — cheap to rebuild, but cached
   // so Mapbox re-requesting an evicted tile doesn't redo the averaging.
   const displayCache = new Map();
   const DISPLAY_CACHE_LIMIT = 200;
@@ -242,7 +343,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // worker has room, newest first, and are dropped there once nobody wants them: a fly-to or a
   // fast zoom requests tiles at every zoom along the way, and running those after Mapbox had
   // cancelled them left the view you actually landed on waiting behind them for seconds.
-  const MAX_JOBS_PER_WORKER = 3; // a few in flight each, so fetch latency overlaps with compute
+  const MAX_JOBS_PER_WORKER = 8; // jobs are network-bound (~1 ms of math vs ~0.4 s of DEM fetches), so keep plenty in flight
   const workerJobs = new Map(); // id → job, while running on a worker
   const jobQueue = [];
   let nextJobId = 0;
@@ -259,21 +360,37 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     };
     return entry;
   });
+  // Jobs prefer a "home" worker picked by neighborhood (4×4-tile blocks), so the analyses that
+  // share DEM tiles land on the same worker and reuse its decoded-tile cache instead of each
+  // downloading and decoding them again. Any idle worker takes a job whose home is full, so
+  // nothing waits while a worker sits empty.
+  // Background-fill jobs (see backgroundFill) are the lowest priority: they only run when no job
+  // for the view is waiting, and at most BG_MAX_RUNNING at a time, so they never slow down slope
+  // you're actually looking at.
+  const BG_MAX_RUNNING = 2;
   function pumpJobs() {
-    for (const entry of workers) {
-      while (entry.busy < MAX_JOBS_PER_WORKER && jobQueue.length) {
-        const job = jobQueue.pop(); // newest first — the current view beats earlier requests
-        entry.busy++;
-        workerJobs.set(job.id, job);
-        entry.worker.postMessage({ id: job.id, urls: job.urls, mpp: job.mpp });
-      }
+    const foregroundWaiting = jobQueue.some((j) => !j.background);
+    let bgRunning = 0;
+    for (const j of workerJobs.values()) if (j.background) bgRunning++;
+    for (let i = jobQueue.length - 1; i >= 0; i--) { // newest first — the current view beats earlier requests
+      const job = jobQueue[i];
+      if (job.background && (foregroundWaiting || bgRunning >= BG_MAX_RUNNING)) continue;
+      const home = workers[job.home];
+      const target = home.busy < MAX_JOBS_PER_WORKER ? home : workers.find((w) => w.busy === 0);
+      if (!target) continue;
+      jobQueue.splice(i, 1);
+      target.busy++;
+      if (job.background) bgRunning++;
+      workerJobs.set(job.id, job);
+      target.worker.postMessage({ id: job.id, urls: job.urls, mpp: job.mpp });
     }
   }
   // Returns { promise, cancel }; cancel() only has an effect while the job is still queued.
-  function queueWorkerJob(urls, mpp) {
+  function queueWorkerJob(urls, mpp, x, y, background = false) {
     let job;
     const promise = new Promise((resolve, reject) => {
-      job = { id: nextJobId++, urls, mpp, resolve, reject };
+      const home = Math.abs(((x >> 2) * 73856093) ^ ((y >> 2) * 19349663)) % workers.length;
+      job = { id: nextJobId++, urls, mpp, home, background, resolve, reject };
     });
     jobQueue.push(job);
     pumpJobs();
@@ -284,7 +401,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
       job.reject(new DOMException('cancelled', 'AbortError'));
       return true;
     };
-    return { promise, cancel };
+    return { promise, cancel, job };
   }
 
   // Analysis grid for one z14/z15 tile: memory → IndexedDB (a previous session) → worker. In-flight
@@ -292,7 +409,68 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // Each caller passes its tile's abort signal; the job is dropped from the queue only once every
   // caller has given up. Resolves null if the DEM tile failed or the job was dropped.
   const analysisInFlight = new Map(); // key → { promise, refs, cancel }
-  function getAnalysisGrid(z, x, y, signal) {
+
+  // Index of what's saved in IndexedDB (loaded once at start, kept up to date as we save), so
+  // coverage questions — "is any slope saved here, at any detail?" — are answered without reading
+  // grids. savedAncestors holds every tile that has saved slope somewhere beneath it.
+  // Store keys: analysis `${z}:${x}:${y}`, display `${DISPLAY_PREFIX}${z}:${x}:${y}`. The display
+  // prefix was bumped from 'd:' when tiles with holes were found saved as complete; old entries
+  // are simply never read again and age out of the store.
+  const DISPLAY_PREFIX = 'd2:';
+  const isAnalysisKey = (storeKey) => /^\d/.test(storeKey);
+  const savedKeys = new Set();
+  const savedAncestors = new Set();
+  function noteSaved(storeKey) {
+    savedKeys.add(storeKey);
+    const [z, x, y] = storeKey.split(':').slice(-3).map(Number);
+    for (let pz = z - 1, px = x >> 1, py = y >> 1; pz >= SOURCE_MIN_ZOOM; pz--, px >>= 1, py >>= 1) {
+      const k = `${pz}:${px}:${py}`;
+      if (savedAncestors.has(k)) break; // its ancestors were added along with it
+      savedAncestors.add(k);
+    }
+  }
+  function persist(storeKey, grid) {
+    noteSaved(storeKey);
+    saveGrid(storeKey, grid);
+  }
+  const savedIndexReady = listGridKeys().then((keys) => {
+    keys.forEach(noteSaved);
+    syncPendingLayer(); // tiles may now count as covered
+  });
+  const hasSlopeHere = (z, x, y) => {
+    const key = `${z}:${x}:${y}`;
+    return gridCache.has(key) || displayCache.has(key) || savedKeys.has(key) || savedKeys.has(`${DISPLAY_PREFIX}${key}`);
+  };
+
+  // New analysis only starts once the camera has been still for SETTLE_MS, so tiles Mapbox asks for
+  // while you're mid-gesture — zooming in and straight back out, flicking past an area — are never
+  // downloaded or computed. Saved slope still shows immediately while moving. A playing flyby is
+  // always moving, so it doesn't wait (it would otherwise never load anything new).
+  const SETTLE_MS = 400; // also covers zooming in to 11 and straight back out with only a short pause
+  let cameraSettled = true;
+  let settleTimer = null;
+  let settleWaiters = [];
+  map.on('movestart', () => {
+    cameraSettled = false;
+    clearTimeout(settleTimer);
+  });
+  map.on('moveend', () => {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      cameraSettled = true;
+      settleWaiters.splice(0).forEach((resolve) => resolve());
+      syncLock();
+      scheduleBackgroundFill();
+    }, SETTLE_MS);
+  });
+  function whenSettled() {
+    if (cameraSettled || flybyPlaying) return Promise.resolve();
+    return new Promise((resolve) => settleWaiters.push(resolve));
+  }
+
+  // `background`: a quiet fill request (see backgroundFill) — runs at any camera zoom, at the
+  // lowest priority. If the view needs the same tile, its request joins and keeps it alive.
+  function getAnalysisGrid(z, x, y, signal, { background = false } = {}) {
     const key = `${z}:${x}:${y}`;
     const cached = gridCache.get(key);
     if (cached) {
@@ -305,7 +483,10 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
       entry.promise = (async () => {
         const stored = await loadGrid(key);
         if (stored) return stored;
-        if (entry.refs === 0) throw new DOMException('cancelled', 'AbortError'); // everyone left during the IndexedDB lookup
+        await whenSettled();
+        // Everyone left during the IndexedDB lookup or the settle wait; below the slope zoom,
+        // only saved slope is shown and nothing new is analysed.
+        if (entry.refs === 0 || (!background && map.getZoom() < MIN_ZOOM)) throw new DOMException('cancelled', 'AbortError');
         const centerLat = tileToLngLat(x + 0.5, y + 0.5, z).lat;
         // The tile plus its 8 neighbors (row-major, center at index 4) so the worker can compute
         // slope across tile edges instead of clamping there.
@@ -313,12 +494,14 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         for (let dy = -1; dy <= 1; dy++) {
           for (let dx = -1; dx <= 1; dx++) urls.push(DEM_URL(z, x + dx, y + dy));
         }
-        const job = queueWorkerJob(urls, metersPerPixel(centerLat, z, TILE_SIZE));
+        const job = queueWorkerJob(urls, metersPerPixel(centerLat, z, TILE_SIZE), x, y, background);
         entry.cancel = job.cancel;
+        entry.job = job.job;
         startNetworkLoad();
         try {
           const grid = await job.promise;
-          saveGrid(key, grid);
+          persist(key, grid);
+          zoomedOutStale = true; // zoomed-out tiles assembled earlier don't include this yet
           return grid;
         } finally {
           endNetworkLoad();
@@ -338,6 +521,10 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
       analysisInFlight.set(key, entry);
     }
     entry.refs++;
+    if (!background && entry.job?.background) {
+      entry.job.background = false; // the view needs it now — no longer a low-priority fill job
+      pumpJobs();
+    }
     signal?.addEventListener('abort', () => {
       // Forget a dropped job right away so a later request starts fresh instead of joining it.
       if (--entry.refs === 0 && entry.cancel?.()) analysisInFlight.delete(key);
@@ -345,44 +532,92 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     return entry.promise;
   }
 
-  // Display grid for a z12–14 tile: each output pixel is the mean slope of the s×s analysis
-  // pixels under it (s = 2 or 4), ignoring no-data.
-  async function getDisplayGrid(z, x, y, signal) {
-    const az = analysisZoomFor(z);
-    if (az === z) return getAnalysisGrid(z, x, y, signal);
+  // Grid for a display tile `d`: the analysis grid at its detail level, or 2×2-averaged down from
+  // finer grids (recursively, via gridAt).
+  // Tiles coarser than DISPLAY_MIN_ZOOM are zoomed-out views: they're only ever assembled from saved
+  // slope, never analysed. That's decided by the tile's own zoom, not the camera's: a zoomed-out
+  // tile still loading when you zoom back in would otherwise analyse everything beneath it — a
+  // z10 tile spans ~40 km.
+  function getDisplayGrid(d, x, y, signal) {
+    return gridAt(d, x, y, analysisZoomFor(d), signal, d < DISPLAY_MIN_ZOOM);
+  }
+
+  // Whether slope for this whole tile is saved at finer detail (so it can be assembled rather
+  // than analysed or downloaded again).
+  function savedBeneath(z, x, y) {
+    if (hasSlopeHere(z, x, y)) return true;
+    if (z >= DETAIL_ZOOM || !savedAncestors.has(`${z}:${x}:${y}`)) return false;
+    return [0, 1, 2, 3].every((i) => savedBeneath(z + 1, x * 2 + (i & 1), y * 2 + (i >> 1)));
+  }
+
+  async function gridAt(z, x, y, n, signal, savedOnly) {
     const key = `${z}:${x}:${y}`;
+    const belowSlopeZoom = savedOnly || map.getZoom() < MIN_ZOOM;
+    if (z >= n) {
+      // Analysis level. Prefer finer slope that's already saved over analysing this tile afresh
+      // (e.g. you arrived at zoom 17 by search, then zoomed out).
+      if (!hasSlopeHere(z, x, y) && z < DETAIL_ZOOM && savedBeneath(z, x, y)) return assemble(z, x, y, z + 1, signal, savedOnly);
+      if (belowSlopeZoom && !hasSlopeHere(z, x, y)) return null; // zoomed out: saved slope only
+      return getAnalysisGrid(z, x, y, signal);
+    }
     const cached = displayCache.get(key);
     if (cached) {
       cacheLru(displayCache, DISPLAY_CACHE_LIMIT, key, cached);
       return cached;
     }
-    const s = 2 ** (az - z);
+    // Averaged display tiles are saved too, so revisiting an area zoomed out reads one tile
+    // instead of the tiles under it.
+    if (savedKeys.has(`${DISPLAY_PREFIX}${key}`)) {
+      const stored = await loadGrid(`${DISPLAY_PREFIX}${key}`);
+      if (stored) {
+        cacheLru(displayCache, DISPLAY_CACHE_LIMIT, key, stored);
+        return stored;
+      }
+    }
+    if (belowSlopeZoom && !savedAncestors.has(key)) return null; // nothing saved under it
+    return assemble(z, x, y, n, signal, savedOnly);
+  }
+
+  // Averages the four z+1 children into one 256px grid (each output pixel is the mean of the 2×2
+  // child pixels under it, ignoring no-data). Complete tiles are cached and saved; tiles with
+  // holes (children not loaded) aren't, so a later request can fill them in.
+  const partialGrids = new WeakSet(); // assembled grids with holes (children not loaded yet)
+  async function assemble(z, x, y, n, signal, savedOnly) {
     const children = await Promise.all(
-      Array.from({ length: s * s }, (_, i) => getAnalysisGrid(az, x * s + (i % s), y * s + Math.floor(i / s), signal))
+      [0, 1, 2, 3].map((i) => gridAt(z + 1, x * 2 + (i & 1), y * 2 + (i >> 1), n, signal, savedOnly))
     );
+    if (!children.some(Boolean)) return null;
     const out = new Uint16Array(TILE_SIZE * TILE_SIZE).fill(NO_DATA);
-    const span = TILE_SIZE / s; // output pixels per child tile, per axis
+    const half = TILE_SIZE / 2;
     children.forEach((child, i) => {
       if (!child) return;
-      const ox = (i % s) * span, oy = Math.floor(i / s) * span;
-      for (let py = 0; py < span; py++) {
-        for (let px = 0; px < span; px++) {
+      const ox = (i & 1) * half, oy = (i >> 1) * half;
+      for (let py = 0; py < half; py++) {
+        for (let px = 0; px < half; px++) {
+          const r0 = py * 2 * TILE_SIZE + px * 2, r1 = r0 + TILE_SIZE;
           let sum = 0, count = 0;
-          for (let dy = 0; dy < s; dy++) {
-            const row = (py * s + dy) * TILE_SIZE + px * s;
-            for (let dx = 0; dx < s; dx++) {
-              const v = child[row + dx];
-              if (v !== NO_DATA) { sum += v; count++; }
-            }
+          for (const v of [child[r0], child[r0 + 1], child[r1], child[r1 + 1]]) {
+            if (v !== NO_DATA) { sum += v; count++; }
           }
           if (count) out[(oy + py) * TILE_SIZE + ox + px] = Math.round(sum / count);
         }
       }
     });
-    // Don't cache a tile with holes from dropped children — the next request should fill them.
-    if (children.every(Boolean)) cacheLru(displayCache, DISPLAY_CACHE_LIMIT, key, out);
+    const key = `${z}:${x}:${y}`;
+    // Complete only if every child is present and itself complete — a child with holes passed up
+    // as if whole made its parent save (and keep serving) the holes after they'd been filled in.
+    if (children.every((c) => c && !partialGrids.has(c))) {
+      cacheLru(displayCache, DISPLAY_CACHE_LIMIT, key, out);
+      persist(`${DISPLAY_PREFIX}${key}`, out);
+      return out;
+    }
+    partialGrids.add(out);
+    if (savedOnly || map.getZoom() < MIN_ZOOM) {
+      zoomedOutStale = true; // holes from "saved slope only" — refresh once more slope is saved
+    }
     return out;
   }
+
 
   // Tiles carry slope *values*, not colors: the GPU blends neighboring values, then maps each
   // screen pixel to a color via the layer's `raster-color` (see addSlopeLayer). Baking colors on
@@ -394,6 +629,11 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const ENCODE_MAX_PCT = 160;
   const ENCODE_SCALE = 255 / (ENCODE_MAX_PCT * 10); // grid stores percent × 10
   const encodeValue = (v) => Math.round(Math.min(ENCODE_MAX_PCT * 10, Math.max(0, v)) * ENCODE_SCALE);
+
+  // A fully transparent tile, used whenever a tile has no slope. Never resolve loadTile with null:
+  // Mapbox then gives the tile a recycled texture from its pool without clearing it, so slope from
+  // whichever tile last used that texture shows up in the wrong place.
+  const EMPTY_TILE = new ImageData(TILE_SIZE, TILE_SIZE);
 
   function encodeGrid(grid) {
     const img = new ImageData(TILE_SIZE, TILE_SIZE);
@@ -470,7 +710,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // tiles, display grids for averaged z12–14 tiles).
   function cachedGrid(z, x, y) {
     const key = `${z}:${x}:${y}`;
-    return (analysisZoomFor(z) === z ? gridCache.get(key) : displayCache.get(key)) ?? null;
+    return gridCache.get(key) ?? displayCache.get(key) ?? null;
   }
 
   // Bilinear sample (percent × 10) of a grid at fractional tile coords, matching how the GPU
@@ -495,7 +735,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // point has none, undefined if nothing covering it is loaded.
   function slopeValueAt(lng, lat) {
     const drawn = drawingZoom();
-    const order = [drawn, ...[DETAIL_ZOOM, BASE_ZOOM, 13, 12].filter((z) => z !== drawn)];
+    const order = [drawn, ...[DETAIL_ZOOM, BASE_ZOOM, OVERVIEW_ZOOM, 12].filter((z) => z !== drawn)];
     for (const z of order) {
       const frac = lngLatToTileFrac(lng, lat, z);
       const grid = cachedGrid(z, Math.floor(frac.x), Math.floor(frac.y));
@@ -539,28 +779,65 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     lastStatusKey = key;
     onStatusChange?.(status);
   }
+  // The loading message (and the lock below) is only for areas with no slope on screen at all —
+  // uncovered tiles. Adding detail where slope already shows (zooming in on a loaded area) is
+  // silent.
   function refreshLoading() {
     clearTimeout(loadingOffTimer);
-    if (pendingTiles > 0 && !loadingActive) {
+    const busy = uncoveredPending() > 0;
+    if (busy && !loadingActive) {
       if (!loadingOnTimer) {
         loadingOnTimer = setTimeout(() => {
           loadingOnTimer = null;
-          if (pendingTiles === 0) return; // downloads finished before it was worth showing
+          if (uncoveredPending() === 0) return; // finished before it was worth showing
           loadingActive = true;
           loadingLabel = `${LOADING_VERBS[Math.floor(Math.random() * LOADING_VERBS.length)]} slope analysis`;
           updateStatus();
+          syncLock();
         }, LOADING_SHOW_DELAY_MS);
       }
       return;
     }
-    if (!loadingActive || pendingTiles > 0 || pendingDisplay.size > 0) return;
+    if (!loadingActive || busy) return;
     loadingOffTimer = setTimeout(() => {
-      if (pendingTiles > 0 || pendingDisplay.size > 0) return;
+      if (uncoveredPending() > 0) return;
       loadingActive = false;
       updateStatus();
+      syncLock();
+      bgQueue = null; // a newly loaded area can create new gaps to fill between
+      scheduleBackgroundFill();
       evaluateFlatness(); // the map may already have gone idle while we waited
     }, LOADING_GRACE_MS);
   }
+
+  // While an area with no slope yet is loading, the map holds still: pan/zoom/rotate/tilt gestures
+  // and the zoom/compass buttons are disabled until it's done. It only engages once the camera has
+  // settled (never mid-gesture), never during a flyby, and lets go after LOCK_MAX_MS regardless so
+  // a stalled load can't trap you. Search, recent parcels and flybys still move the camera.
+  const LOCK_GESTURES = ['dragPan', 'scrollZoom', 'boxZoom', 'dragRotate', 'keyboard', 'doubleClickZoom', 'touchZoomRotate', 'touchPitch'];
+  const LOCK_MAX_MS = 20000;
+  let locked = false;
+  let lockExpired = false;
+  let lockTimer = null;
+  function setLocked(on) {
+    if (on === locked || removed) return;
+    locked = on;
+    for (const name of LOCK_GESTURES) map[name]?.[on ? 'disable' : 'enable']();
+    for (const el of [els.zoomIn, els.zoomOut, els.resetBearing]) if (el) el.disabled = on;
+    map.getContainer().classList.toggle('slope-locked', on);
+    clearTimeout(lockTimer);
+    if (on) {
+      lockTimer = setTimeout(() => {
+        lockExpired = true;
+        setLocked(false);
+      }, LOCK_MAX_MS);
+    }
+  }
+  function syncLock() {
+    if (!loadingActive) lockExpired = false;
+    setLocked(loadingActive && cameraSettled && !flybyPlaying && !lockExpired);
+  }
+
   function startNetworkLoad() {
     pendingTiles++;
     refreshLoading();
@@ -577,7 +854,25 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   const PENDING_SRC_ID = 'slope-pending-src';
   const PENDING_LAYER_ID = 'slope-pending';
   const STRIPE_FRAMES = 8;
-  const pendingDisplay = new Map(); // `${z}:${x}:${y}` → { z, x, y }
+  const pendingDisplay = new Map(); // `${z}:${x}:${y}` → { z, x, y, covered }
+
+  // Whether this tile's area already has slope to show — a coarser tile covering it, or finer
+  // slope saved inside it (in memory or IndexedDB). Loading such a tile only adds detail, so it
+  // happens silently — no stripes, no loading message, no lock. Only areas with no slope at all
+  // get the loading treatment.
+  function isCovered(z, x, y) {
+    if (hasSlopeHere(z, x, y)) return true; // saved itself — it loads straight from the cache
+    for (let pz = z - 1, px = x >> 1, py = y >> 1; pz >= SOURCE_MIN_ZOOM; pz--, px >>= 1, py >>= 1) {
+      if (hasSlopeHere(pz, px, py)) return true;
+    }
+    if (savedAncestors.has(`${z}:${x}:${y}`)) return true;
+    return z < DETAIL_ZOOM && [0, 1, 2, 3].some((i) => hasSlopeHere(z + 1, x * 2 + (i & 1), y * 2 + (i >> 1)));
+  }
+  const uncoveredPending = () => {
+    let n = 0;
+    for (const t of pendingDisplay.values()) if (!t.covered) n++;
+    return n;
+  };
 
 
   let pendingSyncQueued = false;
@@ -591,7 +886,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
       const z = drawingZoom();
       const features = [];
       for (const t of pendingDisplay.values()) {
-        if (t.z !== z) continue;
+        if (t.z !== z || t.covered) continue;
         const nw = tileToLngLat(t.x, t.y, t.z), se = tileToLngLat(t.x + 1, t.y + 1, t.z);
         features.push({
           type: 'Feature',
@@ -604,6 +899,9 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     });
   }
   map.on('zoom', syncPendingLayer); // the drawing zoom can change mid-gesture
+  // Belt and braces: once the map settles, redraw the placeholders from the current set. An update
+  // can be lost while a style swap replaces the source, which left stripes stuck over loaded tiles.
+  map.on('idle', syncPendingLayer);
 
   // Phase-shifted copies of a diagonal stripe pattern; cycling through them makes the stripes
   // drift — a skeleton-style shimmer. Built at 2× for crisp edges on high-DPI screens.
@@ -648,18 +946,25 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
       tileSize: TILE_SIZE,
       minzoom: DISPLAY_MIN_ZOOM,
       maxzoom: DETAIL_ZOOM, // Mapbox overscales z15 for closer zooms
+      // Tilted toward the horizon, Mapbox asks for ever-coarser tiles out to the distance, and each
+      // coarse tile here costs 4–16 detailed analyses. Only the near and mid ground get slope
+      // (tiles no more than one zoom coarser than the view's own); the distance shows basemap.
+      // Re-checked on every coverage update, so skipped tiles are never requested or cached.
+      hasTile({ z }) {
+        return z >= Math.min(DETAIL_ZOOM, Math.round(map.getZoom() + 1)) - 1;
+      },
       async loadTile({ z, x, y }, { signal }) {
         const key = `${z}:${x}:${y}`;
-        pendingDisplay.set(key, { z, x, y });
+        pendingDisplay.set(key, { z, x, y, covered: isCovered(z, x, y) });
         syncPendingLayer();
         refreshLoading();
         try {
           if (z >= DETAIL_ZOOM) {
             const grid = await getAnalysisGrid(DETAIL_ZOOM, x, y, signal);
-            return signal.aborted || !grid ? null : encodeGridUpsampled(grid);
+            return signal.aborted || !grid ? EMPTY_TILE : encodeGridUpsampled(grid);
           }
           const grid = await getDisplayGrid(z, x, y, signal);
-          return signal.aborted || !grid ? null : encodeGrid(grid);
+          return signal.aborted || !grid ? EMPTY_TILE : encodeGrid(grid);
         } finally {
           pendingDisplay.delete(key);
           syncPendingLayer();
@@ -669,14 +974,34 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     };
   }
 
+  // Zoomed out below the slope zoom, tiles are assembled from saved slope only, so they can have
+  // holes, and Mapbox keeps tiles it has already drawn. When new slope has been saved (or tiles
+  // were left with holes), reload the tiles as you cross the slope zoom — in either direction —
+  // so zoomed-out views include everything you've explored and holes fill in once analysis is
+  // allowed again. Mapbox attaches update() to the custom source implementation.
+  let slopeSourceImpl = null;
+  let zoomedOutStale = false;
+  let wasBelowSlopeZoom = map.getZoom() < MIN_ZOOM;
+  map.on('zoom', () => {
+    const below = map.getZoom() < MIN_ZOOM;
+    if (below === wasBelowSlopeZoom) return;
+    wasBelowSlopeZoom = below;
+    if (!zoomedOutStale) return;
+    zoomedOutStale = false;
+    slopeSourceImpl?.update?.();
+  });
+
   function addSlopeLayer() {
-    if (!map.getSource(SLOPE_SRC_ID)) map.addSource(SLOPE_SRC_ID, createSlopeSource());
+    if (!map.getSource(SLOPE_SRC_ID)) {
+      slopeSourceImpl = createSlopeSource();
+      map.addSource(SLOPE_SRC_ID, slopeSourceImpl);
+    }
     if (!map.getLayer(SLOPE_LAYER_ID)) {
       map.addLayer({
         id: SLOPE_LAYER_ID,
         type: 'raster',
         source: SLOPE_SRC_ID,
-        minzoom: MIN_ZOOM,
+        minzoom: FADE_OUT_ZOOM,
         // Standard style's 'night' lightPreset dims the whole scene's ambient light, which
         // flattened this layer's colors no matter how much alpha/brightness was baked into the
         // pixels. raster-emissive-strength makes the layer render as self-lit, bypassing that.
@@ -688,10 +1013,11 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         paint: {
           'raster-emissive-strength': 1,
           'raster-fade-duration': 0,
+          'raster-opacity': ['interpolate', ['linear'], ['zoom'], FADE_OUT_ZOOM, 0, MIN_ZOOM, 1],
           'raster-resampling': 'linear',
           'raster-color-mix': [ENCODE_MAX_PCT, 0, 0, 0],
           'raster-color-range': [0, ENCODE_MAX_PCT],
-          'raster-color': SLOPE_RASTER_COLOR,
+          'raster-color': rasterColorFor(activeStops),
         },
       });
     }
@@ -766,6 +1092,9 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
 
   const EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
+  // White lot lines on the dark map, dark ones on the light map.
+  const parcelLineColor = () => (currentMapStyle === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(20, 20, 24, 0.55)');
+
   function addParcelLayer() {
     if (!map.getSource(PARCEL_SRC_ID)) {
       map.addSource(PARCEL_SRC_ID, { type: 'geojson', data: EMPTY_FC });
@@ -787,7 +1116,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         // competing with them; emissive so the Standard style's 'night' lighting doesn't dim them
         // like it does the basemap. (Dash lengths are in multiples of the line width.)
         paint: {
-          'line-color': 'rgba(255, 255, 255, 0.7)',
+          'line-color': parcelLineColor(),
           'line-width': ['interpolate', ['linear'], ['zoom'], 16, 1, 18, 1.75, 20, 2.5],
           'line-dasharray': [2, 1.5],
           'line-emissive-strength': 1,
@@ -990,9 +1319,11 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   }
 
   let selectedAin = null;
+  let selectedFC = EMPTY_FC; // kept so a map-style swap (which drops all layers) can redraw it
 
   function clearSelection() {
     selectedAin = null;
+    selectedFC = EMPTY_FC;
     map.getSource(SELECTED_FILL_SRC_ID)?.setData(EMPTY_FC);
     map.getSource(SELECTED_LINE_SRC_ID)?.setData(EMPTY_FC);
     onParcelSelect?.(null);
@@ -1004,8 +1335,9 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     const ain = feature.properties?.AIN ?? null;
     selectedAin = ain;
     const geom = { type: 'Feature', properties: {}, geometry: feature.geometry };
-    map.getSource(SELECTED_FILL_SRC_ID)?.setData({ type: 'FeatureCollection', features: [geom] });
-    map.getSource(SELECTED_LINE_SRC_ID)?.setData({ type: 'FeatureCollection', features: [geom] });
+    selectedFC = { type: 'FeatureCollection', features: [geom] };
+    map.getSource(SELECTED_FILL_SRC_ID)?.setData(selectedFC);
+    map.getSource(SELECTED_LINE_SRC_ID)?.setData(selectedFC);
 
     const ring = feature.geometry.type === 'Polygon'
       ? feature.geometry.coordinates[0]
@@ -1138,8 +1470,125 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     }
   }
 
+  // ---- Flyby ----
+  // A scene is a saved camera ({ id, center, zoom, bearing, pitch }); the list itself lives in
+  // React (and localStorage). The map shows a numbered marker at each scene's center and plays
+  // them back like Mapbox's playback-locations example — a default-speed flyTo to each scene —
+  // but instead of just holding on arrival, the camera orbits half way (180°) around the scene's
+  // center (as in the free-camera-point example), then flies on to the next, looping until stopped.
+  const FLYBY_ORBIT_DEGREES = 180;
+  const FLYBY_ORBIT_MS = 5000;
+  const easeInOutSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
+  let flybyMarkers = [];
+  let flybyToken = 0;
+  let flybyPlaying = false;
+
+  function getCamera() {
+    const { lng, lat } = map.getCenter();
+    return { center: [lng, lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+  }
+
+  function setFlybyScenes(scenes, onMarkerClick) {
+    if (removed) return; // StrictMode's discarded instance can still be in a ref for one effect pass
+    flybyMarkers.forEach((m) => m.remove());
+    flybyMarkers = scenes.map((scene, i) => {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'flyby-marker';
+      el.textContent = String(i + 1);
+      el.setAttribute('aria-label', `Go to scene ${i + 1}`);
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onMarkerClick?.(i);
+      });
+      return new mapboxgl.Marker({ element: el }).setLngLat(scene.center).addTo(map);
+    });
+  }
+
+  // Resolves once the camera has settled (or immediately if the move turned out to be a no-op).
+  function waitForMoveEnd() {
+    return new Promise((resolve) => {
+      if (!map.isMoving()) return resolve();
+      map.once('moveend', () => resolve());
+    });
+  }
+
+  function flyToScene(scene) {
+    const from = map.getCenter();
+    const km = from.distanceTo(new mapboxgl.LngLat(scene.center[0], scene.center[1])) / 1000;
+    const dz = Math.abs(scene.zoom - map.getZoom());
+    const camera = { center: scene.center, zoom: scene.zoom, bearing: scene.bearing, pitch: scene.pitch, essential: true };
+    if (km < 0.05 && dz < 0.1) {
+      // Same spot, different angle: flyTo's duration comes from distance travelled, so a pure
+      // rotate/tilt would snap. Give it a duration that scales with the turn instead.
+      const dBearing = Math.abs(((scene.bearing - map.getBearing() + 540) % 360) - 180);
+      const dPitch = Math.abs(scene.pitch - map.getPitch());
+      map.easeTo({ ...camera, duration: Math.max(1200, dBearing * 10 + dPitch * 20) });
+    } else {
+      map.flyTo(camera);
+    }
+    return waitForMoveEnd();
+  }
+
+  // A half turn around the current center, keeping zoom and pitch — the bearing is the camera's
+  // angle around the point it looks at, so sweeping it circles the camera around that point.
+  // Eased in and out so the turn starts and settles smoothly. Resolves early if `token` goes stale.
+  function orbitCenter(token) {
+    return new Promise((resolve) => {
+      const start = map.getBearing();
+      const t0 = performance.now();
+      const frame = (now) => {
+        if (token !== flybyToken) return resolve();
+        const t = Math.min(1, (now - t0) / FLYBY_ORBIT_MS);
+        map.setBearing(start + FLYBY_ORBIT_DEGREES * easeInOutSine(t));
+        if (t < 1) requestAnimationFrame(frame);
+        else resolve();
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+
+  // Flies through the scenes in order, looping back to the first after the last, until stopped
+  // (stopFlyby, or the user grabbing the map). onScene(i) fires as each flight starts.
+  async function playFlyby(scenes, onScene) {
+    const token = ++flybyToken;
+    flybyPlaying = true;
+    syncLock(); // a flyby is never locked out
+    clearSelection();
+    clearPreview();
+    map.getContainer().classList.add('flyby-playing');
+    for (let i = 0; token === flybyToken; i = (i + 1) % scenes.length) {
+      onScene?.(i);
+      await flyToScene(scenes[i]);
+      if (token !== flybyToken) break;
+      await orbitCenter(token);
+    }
+  }
+
+  function stopFlyby() {
+    if (!flybyPlaying) return;
+    flybyToken++;
+    flybyPlaying = false;
+    map.getContainer().classList.remove('flyby-playing');
+    map.stop();
+  }
+
+  let onFlybyInterrupted = null;
+  // Scrolling, dragging or touching the map mid-flyby ends playback rather than fighting the user.
+  // These are raw input events rather than 'movestart', which doesn't fire again while a flight is
+  // already moving the camera — Mapbox just cuts the flight short, which would otherwise read as
+  // "scene reached" and carry on to the next one.
+  for (const type of ['wheel', 'pointerdown', 'touchstart']) {
+    listen(map.getCanvasContainer(), type, () => {
+      if (!flybyPlaying) return;
+      stopFlyby();
+      onFlybyInterrupted?.();
+    }, { capture: true, passive: true });
+  }
+
   if (onSlopeHover) {
     map.on('mousemove', (e) => {
+      if (flybyPlaying) return onSlopeHover(null);
       const percent = map.getZoom() >= MIN_ZOOM ? getSlopeAt(e.lngLat.lng, e.lngLat.lat) : null;
       if (percent === null) {
         onSlopeHover(null);
@@ -1173,11 +1622,274 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     setStripesAnimating(false);
     clearTimeout(loadingOffTimer);
     clearTimeout(loadingOnTimer);
+    clearTimeout(revealTimer);
+    clearTimeout(lockTimer);
+    clearTimeout(settleTimer);
+    clearTimeout(bgTimer);
+    freezeEl?.remove();
+    resolveReveal?.();
     workers.forEach(({ worker }) => worker.terminate());
     jobQueue.length = 0;
     workerJobs.forEach((job) => job.reject(new DOMException('map removed', 'AbortError')));
     parcelFetchToken++;
+    flybyToken++;
   });
 
-  return Object.assign(map, { clearSelection, goToAddress });
+  // Swaps the basemap behind a frozen picture of the current one: the current frame is copied
+  // onto a canvas laid over the map, the style is reloaded out of sight, and once the new map and
+  // its slope layer have fully drawn ('idle'), the picture dissolves away. Without this the new
+  // basemap visibly assembled itself tile by tile. The reload is a full (non-diff) one so
+  // 'style.load' fires and re-adds the slope, parcel and selection layers on top of the new style;
+  // slope grids are cached, so the slope layer comes straight back.
+  // Returns a promise that resolves as the dissolve starts, so the UI can switch theme in step.
+  const REVEAL_MAX_WAIT_MS = 2500; // dissolve by then even if the new map is still loading
+  const DISSOLVE_MS = 500;
+  let appliedMapStyle = currentMapStyle; // the style actually loaded on the map
+  let freezeEl = null;
+  let freezing = null; // in-flight freezeFrame(), shared by rapid toggles
+  let swapToken = 0;
+  let revealTimer = null;
+  let pendingReveal = null;
+  let resolveReveal = null;
+
+  // Copies the map's current frame onto a canvas just above the WebGL canvas (flyby markers come
+  // later in the container, so they stay on top). Copied inside 'render', while the WebGL buffer
+  // still holds the frame — no preserveDrawingBuffer needed. It swallows input so the live map
+  // can't be moved underneath it (the reveal would jump).
+  function freezeFrame() {
+    return new Promise((resolve) => {
+      const source = map.getCanvas();
+      const el = document.createElement('canvas');
+      el.className = 'map-freeze';
+      el.width = source.width;
+      el.height = source.height;
+      for (const type of ['pointerdown', 'mousedown', 'touchstart', 'click', 'dblclick', 'contextmenu']) {
+        el.addEventListener(type, (e) => e.stopPropagation());
+      }
+      el.addEventListener('wheel', (e) => { e.stopPropagation(); e.preventDefault(); }, { passive: false });
+      map.once('render', () => {
+        try {
+          el.getContext('2d').drawImage(source, 0, 0);
+          source.after(el);
+          resolve(el);
+        } catch {
+          resolve(null); // no snapshot: fall back to a plain swap
+        }
+      });
+      map.triggerRepaint();
+    });
+  }
+
+  function dissolveFrozenFrame() {
+    clearTimeout(revealTimer);
+    const el = freezeEl;
+    freezeEl = null;
+    freezing = null;
+    pendingReveal = null;
+    resolveReveal?.();
+    resolveReveal = null;
+    if (!el) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      el.remove();
+      return;
+    }
+    el.style.transition = `opacity ${DISSOLVE_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`;
+    requestAnimationFrame(() => {
+      el.style.opacity = '0';
+    });
+    setTimeout(() => el.remove(), DISSOLVE_MS + 50);
+  }
+
+  function setMapStyle(name) {
+    if (removed || !MAP_STYLES[name]) return Promise.resolve();
+    if (name === currentMapStyle) return pendingReveal ?? Promise.resolve(); // already there / on the way
+    currentMapStyle = name;
+    activeStops = paletteFor(currentMapStyle, currentPalette); // each map has its own palette set
+    const token = ++swapToken;
+    pendingReveal ??= new Promise((resolve) => { resolveReveal = resolve; });
+
+    // Rapid toggles reuse the first snapshot rather than capturing a half-drawn map.
+    freezing ??= freezeFrame().then((el) => { freezeEl = el; });
+    freezing.then(() => {
+      if (removed || token !== swapToken) return; // a later toggle has taken over
+      if (currentMapStyle === appliedMapStyle) { // toggled back before anything reloaded
+        dissolveFrozenFrame();
+        return;
+      }
+      appliedMapStyle = currentMapStyle;
+      const reveal = () => {
+        if (token === swapToken && !removed) dissolveFrozenFrame();
+      };
+      map.once('style.load', () => map.once('idle', reveal));
+      clearTimeout(revealTimer);
+      revealTimer = setTimeout(reveal, REVEAL_MAX_WAIT_MS);
+      map.setStyle(MAP_STYLES[currentMapStyle], { diff: false });
+    });
+    return pendingReveal;
+  }
+
+  function setSlopePalette(name) {
+    if (removed || name === currentPalette) return; // StrictMode's discarded instance / no change
+    currentPalette = name;
+    activeStops = paletteFor(currentMapStyle, currentPalette);
+    if (map.getLayer(SLOPE_LAYER_ID)) map.setPaintProperty(SLOPE_LAYER_ID, 'raster-color', rasterColorFor(activeStops));
+  }
+
+  // ---- Background fill ----
+  // Quietly fills the gaps between areas you've already loaded (e.g. Santa Monica and Los Feliz →
+  // everything in between), so panning or zooming into them later shows slope straight away. A gap tile
+  // is filled when it's sandwiched between loaded areas along one of four axes (east–west,
+  // north–south, both diagonals) within BG_REACH tiles — that covers gaps between nearby areas and
+  // holes inside one, but never grows outward past an area's edge. Only slope you loaded yourself
+  // counts as an anchor (filled tiles are remembered separately), so fills can't creep outward by
+  // anchoring on each other.
+  // It's invisible: lowest-priority worker jobs (see pumpJobs), no stripes/message/lock, only while
+  // the map is idle, the tab is visible and nothing for the view is loading; nearest gaps first,
+  // capped per visit, skipped when the browser asks to save data. Filled at OVERVIEW_ZOOM — the
+  // same detail a zoomed-out view uses; zooming in still loads full detail as usual.
+  const BG_ZOOM = OVERVIEW_ZOOM; // z13 tiles are ~4 km across here
+  const BG_REACH = 10; // ~40 km: how far apart two areas can be for the gap between them to fill
+  const BG_IDLE_MS = 1500; // map idle this long before filling (re)starts
+  const BG_SESSION_LIMIT = 400; // tiles per visit (~0.1–0.2 MB of DEM downloads each)
+  const BG_FILLED_KEY = 'slopes:bg-filled';
+  const AXES = [[1, 0], [0, 1], [1, 1], [1, -1]];
+  let bgFilled;
+  try {
+    bgFilled = new Set(JSON.parse(localStorage.getItem(BG_FILLED_KEY)) ?? []);
+  } catch {
+    bgFilled = new Set();
+  }
+  let bgTimer = null;
+  let bgQueue = null; // gap tiles still to fill, nearest first; null = needs (re)computing
+  let bgInFlight = 0;
+  let bgDoneThisVisit = 0;
+
+  function rememberBgFilled(key) {
+    bgFilled.add(key);
+    try {
+      localStorage.setItem(BG_FILLED_KEY, JSON.stringify([...bgFilled]));
+    } catch {
+      // storage full/unavailable — worst case a filled tile later counts as an anchor
+    }
+  }
+
+  // Tiles at BG_ZOOM that hold slope you loaded yourself (analysed at that zoom or finer).
+  function bgAnchors() {
+    const anchors = new Set();
+    for (const key of savedKeys) {
+      if (!isAnalysisKey(key) || bgFilled.has(key)) continue; // display tiles are derived data
+      const [z, x, y] = key.split(':').map(Number);
+      if (z < BG_ZOOM) continue;
+      const shift = z - BG_ZOOM;
+      anchors.add(`${x >> shift}:${y >> shift}`);
+    }
+    return anchors;
+  }
+
+  function findGapTiles() {
+    const anchors = bgAnchors();
+    const has = (x, y) => anchors.has(`${x}:${y}`);
+    const filled = (x, y) => {
+      const key = `${BG_ZOOM}:${x}:${y}`;
+      return savedKeys.has(key) || savedAncestors.has(key) || has(x, y);
+    };
+    const reaches = (x, y, dx, dy) => {
+      for (let k = 1; k <= BG_REACH; k++) if (has(x + dx * k, y + dy * k)) return true;
+      return false;
+    };
+    // A gap tile is always within BG_REACH of an anchor along some axis, so walking out from every
+    // anchor along the 8 directions finds every candidate.
+    const candidates = new Set();
+    for (const a of anchors) {
+      const [ax, ay] = a.split(':').map(Number);
+      for (const [dx, dy] of AXES) {
+        for (const sgn of [1, -1]) {
+          for (let k = 1; k <= BG_REACH; k++) {
+            const x = ax + dx * k * sgn, y = ay + dy * k * sgn;
+            if (has(x, y)) break;
+            if (!filled(x, y)) candidates.add(`${x}:${y}`);
+          }
+        }
+      }
+    }
+    const center = lngLatToTileFrac(map.getCenter().lng, map.getCenter().lat, BG_ZOOM);
+    const gaps = [];
+    for (const c of candidates) {
+      const [x, y] = c.split(':').map(Number);
+      if (AXES.some(([dx, dy]) => reaches(x, y, dx, dy) && reaches(x, y, -dx, -dy))) {
+        gaps.push({ x, y, d: (x + 0.5 - center.x) ** 2 + (y + 0.5 - center.y) ** 2 });
+      }
+    }
+    return gaps.sort((a, b) => a.d - b.d);
+  }
+
+  const bgAllowed = () =>
+    !removed && !document.hidden && !navigator.connection?.saveData && bgDoneThisVisit < BG_SESSION_LIMIT;
+  const viewBusy = () => !cameraSettled || flybyPlaying || loadingActive || uncoveredPending() > 0;
+
+  // Already-scheduled starts aren't pushed back: 'idle' can fire on nearly every frame (e.g. while
+  // something keeps repainting), which kept restarting the countdown so it never ran. Moving the
+  // map is what cancels a pending start (see the movestart listener).
+  function scheduleBackgroundFill(delay = BG_IDLE_MS) {
+    if (!bgAllowed() || (bgTimer && delay > 0)) return;
+    clearTimeout(bgTimer);
+    bgTimer = setTimeout(() => {
+      bgTimer = null;
+      backgroundFill();
+    }, delay);
+  }
+
+  function backgroundFill() {
+    if (!bgAllowed()) return;
+    if (viewBusy()) return scheduleBackgroundFill();
+    bgQueue ??= findGapTiles();
+    while (bgInFlight < BG_MAX_RUNNING && bgQueue.length && bgDoneThisVisit + bgInFlight < BG_SESSION_LIMIT) {
+      const { x, y } = bgQueue.shift();
+      const key = `${BG_ZOOM}:${x}:${y}`;
+      if (savedKeys.has(key) || savedAncestors.has(key)) continue; // loaded meanwhile
+      bgInFlight++;
+      getAnalysisGrid(BG_ZOOM, x, y, null, { background: true })
+        .then((grid) => {
+          if (!grid) return;
+          rememberBgFilled(key);
+          bgDoneThisVisit++;
+        })
+        .finally(() => {
+          bgInFlight--;
+          scheduleBackgroundFill(0);
+        });
+    }
+    if (!bgQueue.length && bgInFlight === 0) bgQueue = null; // done for now; recompute next time
+  }
+
+
+
+  // Start (or resume) when the map settles; new loads by you can create new gaps to fill, so the
+  // gap list is recomputed whenever you've finished loading something.
+  map.on('idle', () => {
+    if (!loadingActive) scheduleBackgroundFill();
+  });
+  map.on('movestart', () => {
+    clearTimeout(bgTimer);
+    bgTimer = null;
+  });
+  listen(document, 'visibilitychange', () => {
+    if (!document.hidden) return scheduleBackgroundFill();
+    clearTimeout(bgTimer);
+    bgTimer = null;
+  });
+  savedIndexReady.then(() => scheduleBackgroundFill());
+
+  return Object.assign(map, {
+    setMapStyle,
+    setSlopePalette,
+    clearSelection,
+    goToAddress,
+    getCamera,
+    setFlybyScenes,
+    flyToScene,
+    playFlyby,
+    stopFlyby,
+    onFlybyInterrupted: (fn) => { onFlybyInterrupted = fn; },
+  });
 }

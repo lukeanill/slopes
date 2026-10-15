@@ -6,9 +6,12 @@ import { Toaster, toast } from '@lukeanill/ui/components/toast';
 import AddressSearchBar from './AddressSearchBar.jsx';
 import AboutPanel from './AboutPanel.jsx';
 import StatusMessage from './StatusMessage.jsx';
+import FlybyControl, { MAX_SCENES } from './FlybyControl.jsx';
 import { textOnColor } from './colorContrast.js';
 import SlopeDistributionChart from './SlopeDistributionChart.jsx';
 import { initSlopeMap } from './slopeMap.js';
+import ThemeMenu from './ThemeMenu.jsx';
+import { THEME_KEY, ThemeContext, loadTheme } from './theme.js';
 
 // Griffith Park / Hollywood Hills — biases address autosuggest toward this app's actual
 // coverage area (LA parcels/zoning only resolve here anyway), independent of the map's
@@ -68,17 +71,17 @@ function streetAndZip(address) {
 const PARCEL_SHEET_CLASS = [
   'overflow-y-auto',
   'data-[side=right]:inset-y-3 data-[side=right]:right-3 data-[side=right]:h-auto',
-  'rounded-[28px] border border-white/25 data-[side=right]:border',
-  'bg-[rgba(16,15,15,0.55)] backdrop-blur-xl',
-  'shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_8px_32px_rgba(0,0,0,0.35)]',
+  'glass rounded-[28px] border-[var(--glass-border)] data-[side=right]:border',
+  'bg-[var(--glass-bg-panel)] backdrop-blur-xl',
+  'shadow-[inset_0_1px_0_var(--glass-highlight),0_8px_32px_var(--glass-shadow)]',
 ].join(' ');
 const PARCEL_SHEET_THEME = {
-  '--popover-foreground': '#ffffff',
-  '--foreground': '#ffffff',
-  '--muted': 'rgba(255, 255, 255, 0.07)',
-  '--border': 'rgba(255, 255, 255, 0.15)',
-  '--accent': 'rgba(255, 255, 255, 0.08)',
-  '--accent-foreground': '#ffffff',
+  '--popover-foreground': 'var(--glass-fg)',
+  '--foreground': 'var(--glass-fg)',
+  '--muted': 'var(--glass-tint)',
+  '--border': 'var(--glass-tint-border)',
+  '--accent': 'var(--glass-tint)',
+  '--accent-foreground': 'var(--glass-fg)',
 };
 
 // Parcels clicked this session, most recent first, capped at 10 (the oldest drops off).
@@ -107,6 +110,21 @@ function notifyParcelError() {
   });
 }
 
+// Flyby scenes are kept only in this browser's localStorage.
+const FLYBY_KEY = 'slopes:flyby-scenes';
+const FLAT_MESSAGE_MS = 2000;
+function loadScenes() {
+  try {
+    const scenes = JSON.parse(localStorage.getItem(FLYBY_KEY));
+    return Array.isArray(scenes) ? scenes.slice(0, MAX_SCENES) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Applied before React renders so a saved light theme doesn't flash dark glass first.
+document.documentElement.dataset.theme = loadTheme().map;
+
 function MapApp() {
   const mapRef = useRef(null);
   const [slopeHover, setSlopeHover] = useState(null);
@@ -116,6 +134,23 @@ function MapApp() {
   const [history, setHistory] = useState(loadHistory);
   const [searchOpen, setSearchOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [scenes, setScenes] = useState(loadScenes);
+  const [theme, setTheme] = useState(loadTheme);
+  // The map theme the UI is showing right now — lags `theme.map` while the map cross-fades, since
+  // the glass flips as the dissolve starts. JS-driven colors (shimmer, card text) key off this.
+  const [uiMapTheme, setUiMapTheme] = useState(() => document.documentElement.dataset.theme);
+  const [playingIndex, setPlayingIndex] = useState(null);
+  const [reordering, setReordering] = useState(false);
+  const flybyPlaying = playingIndex != null;
+  // "Little slope in this area" only takes over the top slot for FLAT_MESSAGE_MS, then the flyby
+  // control slides back in. (Loading takes it over for as long as loading lasts.)
+  const [expiredFlatStatus, setExpiredFlatStatus] = useState(null);
+  useEffect(() => {
+    if (status?.kind !== 'info') return;
+    const id = setTimeout(() => setExpiredFlatStatus(status), FLAT_MESSAGE_MS);
+    return () => clearTimeout(id);
+  }, [status]);
+  const slotStatus = status?.kind === 'info' && expiredFlatStatus === status ? null : status;
 
   useEffect(() => {
     try {
@@ -148,18 +183,89 @@ function MapApp() {
   }, [selectedParcel]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(FLYBY_KEY, JSON.stringify(scenes.map(({ label, ...scene }) => scene)));
+    } catch {
+      // storage unavailable — scenes just won't survive a reload
+    }
+  }, [scenes]);
+
+  // The light basemap flips every glass surface to dark-on-light (CSS tokens keyed off <html
+  // data-theme>, so portaled menus and the sheet follow too). The flip waits for the map's
+  // cross-fade to start, so the glass changes along with the map rather than over the old one.
+  useEffect(() => {
+    try {
+      localStorage.setItem(THEME_KEY, JSON.stringify(theme));
+    } catch {
+      // storage unavailable — the theme just won't survive a reload
+    }
+    let stale = false;
+    Promise.resolve(mapRef.current?.setMapStyle(theme.map)).then(() => {
+      if (stale) return;
+      document.documentElement.dataset.theme = theme.map;
+      setUiMapTheme(theme.map);
+    });
+    mapRef.current?.setSlopePalette(theme.slope);
+    return () => {
+      stale = true;
+    };
+  }, [theme]);
+
+  // Markers follow the scene list (and its order); clicking one flies to that scene.
+  useEffect(() => {
+    const map = mapRef.current;
+    map?.setFlybyScenes(scenes, (i) => map.flyToScene(scenes[i]));
+  }, [scenes]);
+
+  function addScene() {
+    const camera = mapRef.current?.getCamera();
+    if (!camera) return;
+    setScenes((prev) => (prev.length >= MAX_SCENES ? prev : [...prev, { id: crypto.randomUUID(), ...camera }]));
+  }
+
+  function playFlyby() {
+    const map = mapRef.current;
+    if (!map || scenes.length === 0) return;
+    setPlayingIndex(0);
+    // Loops until stopped; stopFlyby / onFlybyInterrupted clear playingIndex.
+    map.playFlyby(scenes, setPlayingIndex);
+  }
+
+  function stopFlyby() {
+    mapRef.current?.stopFlyby();
+    setPlayingIndex(null);
+  }
+
+  useEffect(() => {
+    if (!flybyPlaying && !reordering) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (flybyPlaying) stopFlyby();
+      else setReordering(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [flybyPlaying, reordering]);
+
+  useEffect(() => {
     mapRef.current = initSlopeMap({
       onSlopeHover: setSlopeHover,
       onParcelSelect: setSelectedParcel,
       onStatusChange: setStatus,
       onParcelError: notifyParcelError,
+      mapStyle: theme.map,
+      slopePalette: theme.slope,
     });
+    mapRef.current.onFlybyInterrupted(() => setPlayingIndex(null));
+    mapRef.current.setFlybyScenes(scenes, (i) => mapRef.current.flyToScene(scenes[i]));
     return () => mapRef.current?.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the map is created once
   }, []);
 
   return (
+    <ThemeContext.Provider value={{ ...theme, map: uiMapTheme }}>
     <div id="app" data-search-open={searchOpen || undefined} data-sheet-open={selectedParcel ? true : undefined}
-      data-about-open={aboutOpen || undefined}
+      data-about-open={aboutOpen || undefined} data-flyby-playing={flybyPlaying || undefined}
     >
       <div id="map"></div>
       {/* Marks the exact point being measured; the chip sits beside it rather than above, since in
@@ -270,8 +376,35 @@ function MapApp() {
         />
       </div>
       <AboutPanel onOpenChange={setAboutOpen} />
-      <StatusMessage status={status} />
+      <StatusMessage
+        uiMapTheme={uiMapTheme}
+        status={slotStatus}
+        flyby={!slotStatus ? (
+          <FlybyControl
+            scenes={scenes}
+            playingIndex={playingIndex}
+            reordering={reordering}
+            onAdd={addScene}
+            onPlay={playFlyby}
+            onStop={stopFlyby}
+            onStartReorder={() => {
+              setScenes((prev) => prev.map((scene, i) => ({ ...scene, label: i + 1 })));
+              setReordering(true);
+            }}
+            onReorder={setScenes}
+            onEndReorder={() => {
+              setScenes((prev) => prev.map(({ label, ...scene }) => scene));
+              setReordering(false);
+            }}
+            onStartOver={() => {
+              setReordering(false);
+              setScenes([]);
+            }}
+          />
+        ) : null}
+      />
       <div id="map-controls">
+        <ThemeMenu theme={theme} onChange={(patch) => setTheme((t) => ({ ...t, ...patch }))} />
         <div id="zoom-level" aria-label="Current zoom level"></div>
         <button id="reset-bearing" className="map-control-btn" type="button" aria-label="Reset to north"></button>
         <div className="map-control-zoom-pill">
@@ -289,6 +422,7 @@ function MapApp() {
         </div>
       </div>
     </div>
+    </ThemeContext.Provider>
   );
 }
 

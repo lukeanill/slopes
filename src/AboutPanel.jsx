@@ -30,7 +30,7 @@ const BENEFITS = [
 
 function Link({ href, children }) {
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-[#dd7ff4]">
+    <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-[var(--about-accent)]">
       {children}
     </a>
   );
@@ -102,7 +102,7 @@ const panelVariants = {
   exit: { opacity: 0, y: 12, filter: 'blur(6px)', transition: { duration: 0.2, ease: 'easeIn' } },
 };
 
-const PANEL = 'w-full rounded-[28px] bg-[rgba(16,15,15,0.4)] p-6 backdrop-blur-xl sm:rounded-[40px] sm:p-20';
+const PANEL = 'w-full rounded-[28px] bg-[var(--glass-bg-panel)] p-6 backdrop-blur-xl sm:rounded-[40px] sm:p-20';
 
 export default function AboutPanel({ onOpenChange }) {
   const [open, setOpen] = useState(false);
@@ -126,7 +126,7 @@ export default function AboutPanel({ onOpenChange }) {
         onClick={() => setOpen((o) => !o)}
         whileTap={{ scale: 0.96 }}
         aria-expanded={open}
-        className="about-button fixed top-4 right-4 z-[60] h-11 cursor-pointer rounded-full border border-white/25 bg-[rgba(16,15,15,0.45)] px-5 text-sm text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_4px_16px_rgba(0,0,0,0.25)] backdrop-blur-md transition-colors hover:bg-[rgba(16,15,15,0.6)]"
+        className="about-button fixed top-4 right-4 z-[60] h-11 cursor-pointer glass rounded-full px-5 text-sm backdrop-blur-md transition-colors hover:bg-[var(--glass-bg-hover)]"
         style={SANS}
       >
         <AnimatePresence mode="wait" initial={false}>
@@ -159,7 +159,7 @@ export default function AboutPanel({ onOpenChange }) {
               className="mx-auto flex w-full max-w-[955px] flex-col gap-5 px-4 pt-20 pb-16 sm:gap-10 sm:pt-[70px]"
               onClick={(e) => e.target === e.currentTarget && setOpen(false)}
             >
-              <motion.section custom={0} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-10 text-white`}>
+              <motion.section custom={0} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-10 text-[var(--glass-fg)]`}>
                 <div className="flex flex-col items-center gap-6 text-center">
                   <h2 className="text-[22px] leading-[1.6] sm:text-[28px]" style={MONO}>
                     Parcel-level slope
@@ -172,7 +172,7 @@ export default function AboutPanel({ onOpenChange }) {
                 </div>
                 <div className="grid w-full grid-cols-1 gap-4 text-center sm:grid-cols-2 sm:gap-10" style={SANS}>
                   {BENEFITS.map((b) => (
-                    <div key={b.title} className="flex flex-col items-center justify-center gap-2 rounded-[14px] border border-white/15 bg-[rgba(17,15,15,0.1)] p-6">
+                    <div key={b.title} className="flex flex-col items-center justify-center gap-2 rounded-[14px] border border-[var(--glass-tint-border)] bg-[var(--glass-tint)] p-6">
                       <p className="text-[14px] leading-[1.4] tracking-[0.14px]">{b.title}</p>
                       <p className="text-[13px] leading-[1.4] tracking-[0.13px] opacity-65">{b.body}</p>
                     </div>
@@ -180,11 +180,11 @@ export default function AboutPanel({ onOpenChange }) {
                 </div>
               </motion.section>
 
-              <motion.section custom={1} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-10 text-white`}>
+              <motion.section custom={1} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-10 text-[var(--glass-fg)]`}>
                 <div className="flex flex-col items-center gap-4 text-center">
                   <div className="flex gap-2" style={SANS}>
                     {['Private beta', 'Nerds only'].map((tag) => (
-                      <span key={tag} className="rounded-lg bg-[#2c0433] px-2.5 py-1 text-[13px] leading-[1.6] tracking-[1.04px]">
+                      <span key={tag} className="rounded-lg bg-[#2c0433] px-2.5 py-1 text-white text-[13px] leading-[1.6] tracking-[1.04px]">
                         {tag}
                       </span>
                     ))}
@@ -196,10 +196,10 @@ export default function AboutPanel({ onOpenChange }) {
                     Or, do it the good ‘ol current way...
                   </p>
                 </div>
-                <ol className="flex w-full max-w-[795px] flex-col gap-4 text-[13px] leading-[2] text-white sm:text-[14px]" style={MONO}>
+                <ol className="flex w-full max-w-[795px] flex-col gap-4 text-[13px] leading-[2] text-[var(--glass-fg)] sm:text-[14px]" style={MONO}>
                   {STEPS.map((step) => (
                     <li key={step.title}>
-                      <span className="text-[#dd7ff4]">{step.title}</span>
+                      <span className="text-[var(--about-accent)]">{step.title}</span>
                       <br />
                       {step.body}
                     </li>

@@ -7,8 +7,8 @@ const DB_NAME = 'slope-cache';
 const STORE = 'grids';
 // Bump whenever computeSlopeGrid's output changes, so stale grids from an older algorithm are
 // never served — old-version keys simply stop matching and age out through eviction.
-const GRID_VERSION = 4;
-const MAX_ENTRIES = 2000; // ~75KB each gzipped → ~150MB ceiling
+const GRID_VERSION = 7; // 7: no slope below sea level; drops grids from the zoomed-out over-analysis bug
+const MAX_ENTRIES = 5500; // ~70KB each gzipped (measured) → ~380MB ceiling; a zoom-11 view is ~200 entries
 const PRUNE_EVERY = 100; // writes between eviction passes
 
 let dbPromise = null;
@@ -48,6 +48,21 @@ export async function loadGrid(key) {
     return new Uint16Array(await new Response(stream).arrayBuffer());
   } catch {
     return null;
+  }
+}
+
+// Keys (without the version prefix) of every grid saved under the current version, so the map
+// knows what's saved without reading each one. Eviction can make an entry stale later; callers
+// treat a failed load as "not saved".
+export async function listGridKeys() {
+  try {
+    const db = await openDb();
+    if (!db) return [];
+    const keys = await request(db.transaction(STORE).objectStore(STORE).getAllKeys());
+    const prefix = keyFor('');
+    return keys.filter((k) => typeof k === 'string' && k.startsWith(prefix)).map((k) => k.slice(prefix.length));
+  } catch {
+    return [];
   }
 }
 

@@ -121,13 +121,13 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
       <motion.div
         layout
         transition={transition}
-        className={`relative flex h-11 items-center overflow-hidden rounded-full border border-white/25 bg-[rgba(16,15,15,0.45)] shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_4px_16px_rgba(0,0,0,0.25)] backdrop-blur-md ${
+        className={`relative flex h-11 items-center overflow-hidden rounded-full glass backdrop-blur-md ${
           isSearching ? 'w-[calc(100vw-96px)] sm:w-80' : 'w-11'
         }`}
       >
         <div className="flex h-full w-full items-center justify-center px-3">
           <motion.div layout="position" transition={transition}>
-            <Search size={16} strokeWidth={2.25} className="shrink-0 text-white" />
+            <Search size={16} strokeWidth={2.25} className="shrink-0 text-[var(--glass-fg)]" />
           </motion.div>
           <AnimatePresence mode="wait">
             {isSearching && (
@@ -140,7 +140,7 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
                 transition={{ duration: 0.15 }}
                 placeholder="Search an address"
                 aria-label="Search an address"
-                className="ml-2 w-full border-none bg-transparent text-sm font-medium text-white outline-none placeholder:text-white/60"
+                className="ml-2 w-full border-none bg-transparent text-sm font-medium text-[var(--glass-fg)] outline-none placeholder:text-[var(--glass-fg-muted)]"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -174,7 +174,7 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
             transition={transition}
             whileTap={{ scale: 0.9 }}
             onClick={() => closeThen()}
-            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full border border-white/25 bg-[rgba(16,15,15,0.45)] shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_4px_16px_rgba(0,0,0,0.25)] backdrop-blur-md text-white transition-colors hover:bg-[rgba(16,15,15,0.6)]"
+            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full glass backdrop-blur-md text-[var(--glass-fg)] transition-colors hover:bg-[var(--glass-bg-hover)]"
           >
             <X size={16} strokeWidth={2.25} />
           </motion.button>
@@ -194,7 +194,7 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
               key="results"
               {...panelMotion}
               style={{ transformOrigin: 'top center' }}
-              className="pointer-events-auto space-y-0.5 rounded-2xl border border-border bg-card p-1.5 shadow-md"
+              className="glass pointer-events-auto space-y-0.5 rounded-2xl bg-[var(--glass-bg-panel)] p-1.5 backdrop-blur-xl"
             >
               {suggestions.map((f, i) => (
                 <motion.li
@@ -206,7 +206,7 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
                     type="button"
                     whileTap={{ scale: 0.98 }}
                     onClick={() => pick(f)}
-                    className="w-full cursor-pointer truncate rounded-xl px-3 py-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                    className="w-full cursor-pointer truncate rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--glass-fg)] transition-colors hover:bg-[var(--glass-tint)]"
                   >
                     {f.place_name}
                   </motion.button>

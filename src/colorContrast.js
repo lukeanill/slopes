@@ -36,3 +36,14 @@ export function readableOnDark(color) {
   }
   return toCss(rgb);
 }
+
+// The light-theme counterpart: a band color used as text on the light glass, darkened toward
+// black just enough to reach 4.5:1 against a light reference.
+const LIGHT_GLASS_REFERENCE = [236, 234, 233];
+export function readableOnLight(color) {
+  let rgb = parseColor(color);
+  for (let i = 0; i < 30 && contrast(rgb, LIGHT_GLASS_REFERENCE) < 4.5; i++) {
+    rgb = rgb.map((c) => c * 0.9);
+  }
+  return toCss(rgb);
+}
