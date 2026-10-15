@@ -458,13 +458,17 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => {
       cameraSettled = true;
-      settleWaiters.splice(0).forEach((resolve) => resolve());
+      // During a flyby, waiting requests keep waiting (they'd only be dropped) until it stops.
+      if (!flybyPlaying) settleWaiters.splice(0).forEach((resolve) => resolve());
       syncLock();
       scheduleBackgroundFill();
     }, SETTLE_MS);
   });
+  // A playing flyby never loads new slope: it shows only what's already saved, so the video is
+  // free of loading activity. Its camera is always moving, so requests simply wait here until it
+  // stops and the camera settles — then whatever is on screen loads as usual.
   function whenSettled() {
-    if (cameraSettled || flybyPlaying) return Promise.resolve();
+    if (cameraSettled && !flybyPlaying) return Promise.resolve();
     return new Promise((resolve) => settleWaiters.push(resolve));
   }
 
@@ -486,7 +490,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
         await whenSettled();
         // Everyone left during the IndexedDB lookup or the settle wait; below the slope zoom,
         // only saved slope is shown and nothing new is analysed.
-        if (entry.refs === 0 || (!background && map.getZoom() < MIN_ZOOM)) throw new DOMException('cancelled', 'AbortError');
+        if (entry.refs === 0 || flybyPlaying || (!background && map.getZoom() < MIN_ZOOM)) throw new DOMException('cancelled', 'AbortError');
         const centerLat = tileToLngLat(x + 0.5, y + 0.5, z).lat;
         // The tile plus its 8 neighbors (row-major, center at index 4) so the worker can compute
         // slope across tile edges instead of clamping there.
@@ -784,12 +788,12 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // silent.
   function refreshLoading() {
     clearTimeout(loadingOffTimer);
-    const busy = uncoveredPending() > 0;
+    const busy = !flybyPlaying && uncoveredPending() > 0; // a flyby shows no loading activity
     if (busy && !loadingActive) {
       if (!loadingOnTimer) {
         loadingOnTimer = setTimeout(() => {
           loadingOnTimer = null;
-          if (uncoveredPending() === 0) return; // finished before it was worth showing
+          if (flybyPlaying || uncoveredPending() === 0) return; // finished before it was worth showing
           loadingActive = true;
           loadingLabel = `${LOADING_VERBS[Math.floor(Math.random() * LOADING_VERBS.length)]} slope analysis`;
           updateStatus();
@@ -800,7 +804,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     }
     if (!loadingActive || busy) return;
     loadingOffTimer = setTimeout(() => {
-      if (uncoveredPending() > 0) return;
+      if (!flybyPlaying && uncoveredPending() > 0) return;
       loadingActive = false;
       updateStatus();
       syncLock();
@@ -886,7 +890,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
       const z = drawingZoom();
       const features = [];
       for (const t of pendingDisplay.values()) {
-        if (t.z !== z || t.covered) continue;
+        if (t.z !== z || t.covered || flybyPlaying) continue;
         const nw = tileToLngLat(t.x, t.y, t.z), se = tileToLngLat(t.x + 1, t.y + 1, t.z);
         features.push({
           type: 'Feature',
@@ -1554,6 +1558,8 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     const token = ++flybyToken;
     flybyPlaying = true;
     syncLock(); // a flyby is never locked out
+    refreshLoading(); // and shows no loading message…
+    syncPendingLayer(); // …or stripes
     clearSelection();
     clearPreview();
     map.getContainer().classList.add('flyby-playing');
@@ -1571,6 +1577,11 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     flybyPlaying = false;
     map.getContainer().classList.remove('flyby-playing');
     map.stop();
+    // Back to normal: anything on screen without slope now loads (requests waiting in whenSettled
+    // go ahead once the camera settles — now, if it already has), with the usual message and stripes.
+    if (cameraSettled) settleWaiters.splice(0).forEach((resolve) => resolve());
+    refreshLoading();
+    syncPendingLayer();
   }
 
   let onFlybyInterrupted = null;
