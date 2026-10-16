@@ -112,7 +112,6 @@ function notifyParcelError() {
 
 // Flyby scenes are kept only in this browser's localStorage.
 const FLYBY_KEY = 'slopes:flyby-scenes';
-const FLAT_MESSAGE_MS = 2000;
 function loadScenes() {
   try {
     const scenes = JSON.parse(localStorage.getItem(FLYBY_KEY));
@@ -142,15 +141,9 @@ function MapApp() {
   const [playingIndex, setPlayingIndex] = useState(null);
   const [reordering, setReordering] = useState(false);
   const flybyPlaying = playingIndex != null;
-  // "Little slope in this area" only takes over the top slot for FLAT_MESSAGE_MS, then the flyby
-  // control slides back in. (Loading takes it over for as long as loading lasts.)
-  const [expiredFlatStatus, setExpiredFlatStatus] = useState(null);
-  useEffect(() => {
-    if (status?.kind !== 'info') return;
-    const id = setTimeout(() => setExpiredFlatStatus(status), FLAT_MESSAGE_MS);
-    return () => clearTimeout(id);
-  }, [status]);
-  const slotStatus = status?.kind === 'info' && expiredFlatStatus === status ? null : status;
+  // While a flyby plays the slot keeps its controls (Stop): the camera dips below zoom 11 between
+  // distant scenes, and messages about the view mid-flight would only flicker over them.
+  const slotStatus = flybyPlaying ? null : status;
 
   useEffect(() => {
     try {

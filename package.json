@@ -18,6 +18,7 @@
     "@lukeanill/ui": "^4.2.0",
     "lucide-react": "^0.469.0",
     "mapbox-gl": "^3.29.0",
+    "metal-fx": "^1.0.4",
     "motion": "^13.5.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

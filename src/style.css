@@ -43,8 +43,6 @@
   --glass-selected: #ffffff; /* theme menu's selected-option ring */
   --about-accent: #dd7ff4;
   --bottom-fade: rgba(44, 46, 63, 0.85);
-  --control-bg: rgba(5, 5, 5, 0.3); /* bottom-right map controls */
-  --control-bg-hover: rgba(5, 5, 5, 0.45);
 }
 :root[data-theme="light"] {
   --glass-bg: rgba(255, 255, 255, 0.2);
@@ -60,8 +58,6 @@
   --glass-selected: #000000;
   --about-accent: #8a2aa3;
   --bottom-fade: rgba(235, 230, 229, 0.7);
-  --control-bg: rgba(255, 255, 255, 0.2);
-  --control-bg-hover: rgba(255, 255, 255, 0.42);
 }
 
 /* Shared glass surface. In the components layer so Tailwind utilities (hover:bg-…, blur, a
@@ -92,26 +88,29 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   position: fixed; right: 20px; bottom: 24px; z-index: 6;
   display: flex; flex-direction: column; align-items: center; gap: 8px; width: 40px;
 }
+/* Map controls in the quiet control style (see .quiet-control); zoom in/out share one pill. */
 .map-control-btn {
-  width: 40px; height: 40px; padding: 0; border: none; cursor: pointer;
-  background: var(--control-bg); backdrop-filter: blur(10px);
+  width: 40px; height: 40px; padding: 0; border: none; cursor: pointer; border-radius: 999px;
+  background: var(--quiet-bg); color: var(--quiet-fg); box-shadow: var(--quiet-shadow);
   display: flex; align-items: center; justify-content: center;
   transition: background 0.15s ease, opacity 0.15s ease;
 }
-.map-control-btn:hover { background: var(--control-bg-hover); }
-.map-control-btn svg [fill="white"] { fill: var(--glass-fg); }
-.map-control-btn svg [stroke="white"] { stroke: var(--glass-fg); }
+.map-control-btn:hover { background: var(--quiet-bg-hover); }
 .map-control-btn:active { opacity: 0.6; }
-.map-control-btn svg { width: 28px; height: 28px; display: block; }
-#reset-bearing { border-radius: 999px; }
+.map-control-btn svg { width: 18px; height: 18px; display: block; }
 #zoom-level {
   width: 40px; height: 40px; border-radius: 999px;
-  background: var(--control-bg); backdrop-filter: blur(10px);
+  background: var(--quiet-bg); box-shadow: var(--quiet-shadow);
   display: flex; align-items: center; justify-content: center;
-  color: var(--glass-fg); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--quiet-fg); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums;
   user-select: none;
 }
-.map-control-zoom-pill { display: flex; flex-direction: column; gap: 1px; width: 100%; }
+.map-control-zoom-pill {
+  display: flex; flex-direction: column; width: 100%; border-radius: 999px;
+  background: var(--quiet-bg); box-shadow: var(--quiet-shadow);
+}
+.map-control-zoom-pill .map-control-btn { background: transparent; box-shadow: none; }
+.map-control-zoom-pill .map-control-btn:hover { background: var(--quiet-tint); }
 .map-control-btn-top { border-radius: 999px 999px 0 0; }
 .map-control-btn-bottom { border-radius: 0 0 999px 999px; }
 
@@ -121,14 +120,12 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   display: flex; justify-content: center;
   transition: opacity 0.25s ease, translate 0.35s cubic-bezier(0.22, 1, 0.36, 1), filter 0.2s ease;
 }
-/* Same glass as the search / About controls. */
+/* The message itself; its surface (metal while loading / prompting, quiet otherwise) is the Metal
+   wrapper's — see StatusMessage. */
 .status-pill {
   display: flex; align-items: center; justify-content: center;
-  padding: 10px 18px; border-radius: 999px;
-  background: var(--glass-bg); border: 1px solid var(--glass-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 4px 16px var(--glass-shadow);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  color: var(--glass-fg); font-family: 'DM Sans', sans-serif; font-size: 14px; white-space: nowrap;
+  height: 44px; padding: 0 20px; border-radius: 999px;
+  font-family: 'Inter', system-ui, sans-serif; font-size: 14px; font-weight: 500; white-space: nowrap;
 }
 
 #bottom-bar { display: none !important; } /* hidden for now — keep the DOM/JS wiring intact for later */
@@ -272,6 +269,36 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 
 /* White single-color icon files flip to black on light glass. */
 :root[data-theme="light"] .theme-mono-icon { filter: invert(1); }
+
+/* Quiet controls (see Metal.jsx): the metal-fx demo's secondary surface — solid, a faint inner
+   glow and a hairline rim. The same surface for plain controls (.quiet-control), for metal
+   wrappers while not active ([data-quiet]), and for the small menus they open (.quiet-panel). */
+:root {
+  --quiet-bg: #1d1d1d; --quiet-bg-hover: #242424; --quiet-fg: #f8f8f8; --quiet-fg-muted: rgba(248, 248, 248, 0.5);
+  --quiet-rim: rgba(255, 255, 255, 0.08); --quiet-tint: rgba(255, 255, 255, 0.06);
+  --quiet-shadow: inset 0 0 50px rgba(255, 255, 255, 0.02), inset 0 0 0 1px var(--quiet-rim);
+}
+:root[data-theme="light"] {
+  --quiet-bg: #ffffff; --quiet-bg-hover: #f4f4f4; --quiet-fg: #1d1d1d; --quiet-fg-muted: rgba(29, 29, 29, 0.5);
+  --quiet-rim: rgba(0, 0, 0, 0.08); --quiet-tint: rgba(0, 0, 0, 0.05);
+  --quiet-shadow: inset 0 0 0 1px var(--quiet-rim), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.quiet-control {
+  background: var(--quiet-bg); color: var(--quiet-fg);
+  box-shadow: var(--quiet-shadow);
+  transition: background 0.15s ease;
+}
+.quiet-control:hover:not(:disabled) { background: var(--quiet-bg-hover); }
+.quiet-control:disabled { opacity: 0.45; cursor: default; }
+.metal-fx-root[data-quiet] { background: var(--quiet-bg); color: var(--quiet-fg); }
+.metal-fx-root[data-quiet]::after { box-shadow: inset 0 0 0 1px var(--quiet-rim); }
+.metal-fx-root[data-quiet] .metal-fx-inner { box-shadow: none; }
+.metal-fx-root[data-quiet]:hover { background: var(--quiet-bg-hover); }
+.metal-fx-root:not([data-quiet]) { color: var(--quiet-fg); }
+.quiet-panel {
+  background: var(--quiet-bg); color: var(--quiet-fg);
+  box-shadow: var(--quiet-shadow), 0 8px 24px rgba(0, 0, 0, 0.25);
+}
 
 /* Frozen picture of the old basemap, shown over the map while a style swap loads underneath and
    then dissolved away (see setMapStyle in slopeMap.js). */

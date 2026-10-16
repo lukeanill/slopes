@@ -3,12 +3,12 @@ import { AnimatePresence } from 'motion/react';
 import { Slide } from '@lukeanill/ui/components/animate-ui/primitives/effects/slide';
 import { ShimmeringText } from '@lukeanill/ui/components/animate-ui/primitives/texts/shimmering';
 import { RollingText } from '@lukeanill/ui/components/animate-ui/primitives/texts/rolling';
+import Metal from './Metal.jsx';
 
 // Top-center status messages. Every change — appearing, disappearing, or swapping one message for
 // another — slides the box up out of view and the next one down in (design system Slide), so the
 // eye always reads it as a new message. Per kind:
 //   prompt  → wave shimmer   ("Zoom in for slope analysis")
-//   info    → static text    ("Little slope in this area")
 //   loading → rolling text that replays until loading finishes ("Wrangling slope analysis")
 const SLIDE_TRANSITION = { type: 'spring', stiffness: 380, damping: 32 };
 const ROLL_EVERY_MS = 2200;
@@ -37,13 +37,12 @@ function Message({ status, uiMapTheme }) {
     const colors = SHIMMER_COLORS[uiMapTheme] ?? SHIMMER_COLORS.dark;
     return <ShimmeringText key={uiMapTheme} text={status.text} duration={2.3} wave {...colors} />;
   }
-  if (status.kind === 'loading') return <RepeatingRollingText text={status.label} />;
-  return <span>{status.text}</span>;
+  return <RepeatingRollingText text={status.label} />; // loading
 }
 
 // One top-center slot holding either a status message or the flyby control (`flyby`), never both;
 // switching between them uses the same slide out / slide in. The caller decides which: the
-// message wins whenever there is one (zoom-in prompt, loading, a brief flat-area note).
+// message wins whenever there is one (zoom-in prompt or loading).
 export default function StatusMessage({ status, flyby, uiMapTheme }) {
   const key = flyby ? 'flyby' : status ? `${status.kind}:${status.text ?? status.label}` : null;
   return (
@@ -54,8 +53,13 @@ export default function StatusMessage({ status, flyby, uiMapTheme }) {
             {flyby}
           </Slide>
         ) : status ? (
-          <Slide key={key} direction="down" offset={90} transition={SLIDE_TRANSITION} className="status-pill">
-            <Message status={status} uiMapTheme={uiMapTheme} />
+          <Slide key={key} direction="down" offset={90} transition={SLIDE_TRANSITION}>
+            {/* Both messages, loading and the zoom prompt, get the metal ring. */}
+            <Metal variant="button">
+              <div className="status-pill">
+                <Message status={status} uiMapTheme={uiMapTheme} />
+              </div>
+            </Metal>
           </Slide>
         ) : null}
       </AnimatePresence>

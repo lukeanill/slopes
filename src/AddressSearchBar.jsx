@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Search, X } from 'lucide-react';
+import { QUIET } from './Metal.jsx';
 import ParcelHistory from './ParcelHistory.jsx';
 
 // Search-only adaptation of the design system's MorphingDiscoveryBar
@@ -10,7 +11,8 @@ import ParcelHistory from './ParcelHistory.jsx';
 // Results are biased toward `proximity` so they favor this app's actual coverage area.
 // Opening search with nothing typed shows recently viewed parcels; typing swaps them for results.
 const transition = { damping: 32, mass: 1, stiffness: 520, type: 'spring' };
-// Pill and close button use the About button's glass style so the top-row controls match.
+// Pill, close button and results use the quiet style, like the other top-row controls (see
+// Metal.jsx).
 
 // The dropdown panel (recent parcels or results) eases rather than springs, so swapping between
 // them reads as one surface changing content, not two things bouncing past each other.
@@ -121,13 +123,13 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
       <motion.div
         layout
         transition={transition}
-        className={`relative flex h-11 items-center overflow-hidden rounded-full glass backdrop-blur-md ${
+        className={`${QUIET} relative h-11 overflow-hidden ${
           isSearching ? 'w-[calc(100vw-96px)] sm:w-80' : 'w-11'
         }`}
       >
         <div className="flex h-full w-full items-center justify-center px-3">
           <motion.div layout="position" transition={transition}>
-            <Search size={16} strokeWidth={2.25} className="shrink-0 text-[var(--glass-fg)]" />
+            <Search size={18} strokeWidth={1.75} className="shrink-0" />
           </motion.div>
           <AnimatePresence mode="wait">
             {isSearching && (
@@ -140,7 +142,7 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
                 transition={{ duration: 0.15 }}
                 placeholder="Search an address"
                 aria-label="Search an address"
-                className="ml-2 w-full border-none bg-transparent text-sm font-medium text-[var(--glass-fg)] outline-none placeholder:text-[var(--glass-fg-muted)]"
+                className="ml-2 w-full border-none bg-transparent text-sm font-medium text-inherit outline-none placeholder:text-[var(--quiet-fg-muted)]"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -174,9 +176,9 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
             transition={transition}
             whileTap={{ scale: 0.9 }}
             onClick={() => closeThen()}
-            className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full glass backdrop-blur-md text-[var(--glass-fg)] transition-colors hover:bg-[var(--glass-bg-hover)]"
+            className={`${QUIET} size-11`}
           >
-            <X size={16} strokeWidth={2.25} />
+            <X size={18} strokeWidth={1.75} />
           </motion.button>
         )}
       </AnimatePresence>
@@ -194,7 +196,7 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
               key="results"
               {...panelMotion}
               style={{ transformOrigin: 'top center' }}
-              className="glass pointer-events-auto space-y-0.5 rounded-2xl bg-[var(--glass-bg-panel)] p-1.5 backdrop-blur-xl"
+              className="quiet-panel pointer-events-auto space-y-0.5 rounded-2xl p-1.5"
             >
               {suggestions.map((f, i) => (
                 <motion.li
@@ -206,7 +208,7 @@ export default function AddressSearchBar({ proximity, onSelectAddress, history =
                     type="button"
                     whileTap={{ scale: 0.98 }}
                     onClick={() => pick(f)}
-                    className="w-full cursor-pointer truncate rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--glass-fg)] transition-colors hover:bg-[var(--glass-tint)]"
+                    className="w-full cursor-pointer truncate rounded-xl px-3 py-2 text-left text-sm font-medium text-[var(--quiet-fg)] transition-colors hover:bg-[var(--quiet-tint)]"
                   >
                     {f.place_name}
                   </motion.button>

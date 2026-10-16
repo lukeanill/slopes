@@ -152,8 +152,8 @@ export default function AboutPanel({ onOpenChange }) {
         onClick={() => setOpen((o) => !o)}
         whileTap={{ scale: 0.96 }}
         aria-expanded={open}
-        className="about-button fixed top-4 right-4 z-[60] h-11 cursor-pointer glass rounded-full px-5 text-sm backdrop-blur-md transition-colors hover:bg-[var(--glass-bg-hover)]"
-        style={SANS}
+        className="quiet-control about-button fixed top-4 right-4 z-[60] h-11 cursor-pointer rounded-full px-5 text-sm"
+        style={SANS_BOLD}
       >
         <AnimatePresence mode="wait" initial={false}>
           <motion.span

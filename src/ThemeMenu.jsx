@@ -1,7 +1,8 @@
+import { useState } from 'react';
+import { Layers } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverPanel } from '@lukeanill/ui/components/animate-ui/components/base/popover';
 import { Slider } from '@lukeanill/ui/components/slider';
-import iconSwatchesLight from './assets/theme/swatches-light-icon.svg';
-import iconSwatchesDark from './assets/theme/swatches-dark-icon.svg';
+import Metal, { METAL_HOST } from './Metal.jsx';
 import imgMapDark from './assets/theme/map-dark.jpg';
 import imgMapLightBase from './assets/theme/map-light-base.png';
 import imgMapLightOverlay from './assets/theme/map-light-overlay.jpg';
@@ -73,27 +74,21 @@ const SLIDER_COLORS = {
 
 // onChange receives a partial theme ({ map }, { slope } or { opacity }).
 export default function ThemeMenu({ theme, onChange }) {
+  // The button turns metal while its menu is open.
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
-      <PopoverTrigger
-        className="map-control-btn rounded-full"
-        aria-label="Map and slope colors"
-      >
-        <img
-          src={theme.map === 'light' ? iconSwatchesDark : iconSwatchesLight}
-          alt=""
-          width={24}
-          height={24}
-          className="block shrink-0"
-          draggable={false}
-        />
-      </PopoverTrigger>
+    <Popover onOpenChange={setOpen}>
+      <Metal active={open}>
+        <PopoverTrigger className={`${METAL_HOST} size-10`} aria-label="Map and slope colors">
+          <Layers size={18} strokeWidth={1.75} />
+        </PopoverTrigger>
+      </Metal>
       <PopoverPanel
         side="left"
         align="end"
         sideOffset={12}
-        // The popover's own bg/text/border/shadow utilities would beat .glass, so restate them.
-        className="glass flex w-[186px] flex-col items-center gap-6 rounded-[24px] border-[var(--glass-border)] bg-[var(--glass-bg)] p-6 text-[var(--glass-fg)] shadow-[inset_0_1px_0_var(--glass-highlight),0_4px_16px_var(--glass-shadow)] backdrop-blur-xl"
+        // .quiet-panel is unlayered, so it wins over the popover's own bg/border/shadow utilities.
+        className="quiet-panel flex w-[186px] flex-col items-center gap-6 rounded-[24px] border-0 p-6"
         style={SANS}
       >
         <section className="flex flex-col items-center gap-4">
