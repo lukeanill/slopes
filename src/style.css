@@ -216,26 +216,31 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
    the `transform` these elements already animate. They return with a short delay, after the
    search/sheet has started leaving. */
 #map-controls,
-.about-button,
+.top-actions,
 .search-control {
   transition: opacity 0.2s ease 0.12s, translate 0.35s cubic-bezier(0.22, 1, 0.36, 1) 0.12s,
     filter 0.2s ease 0.12s, background-color 0.15s ease;
 }
-#app:is([data-search-open], [data-sheet-open]) :is(#map-controls, .about-button, .status-slot),
+#app:is([data-search-open], [data-sheet-open]) :is(#map-controls, .top-actions, .status-slot),
 #app:is([data-sheet-open], [data-about-open]) .search-control,
 #app[data-about-open] :is(#map-controls, .status-slot) {
   opacity: 0; filter: blur(4px); pointer-events: none;
   transition-delay: 0s;
 }
-#app[data-flyby-playing] :is(#map-controls, .about-button, .search-control) {
+#app[data-flyby-playing] :is(#map-controls, .top-actions, .search-control) {
   opacity: 0; filter: blur(4px); pointer-events: none;
   transition-delay: 0s;
 }
 #app:is([data-search-open], [data-sheet-open], [data-about-open], [data-flyby-playing]) #map-controls { translate: 16px 0; }
-#app[data-flyby-playing] :is(.about-button, .search-control) { translate: 0 -12px; }
+#app[data-flyby-playing] :is(.top-actions, .search-control) { translate: 0 -12px; }
 #app:is([data-search-open], [data-sheet-open], [data-about-open]) .status-slot,
-#app:is([data-search-open], [data-sheet-open]) .about-button,
+#app:is([data-search-open], [data-sheet-open]) .top-actions,
 #app:is([data-sheet-open], [data-about-open]) .search-control { translate: 0 -12px; }
+/* With one overlay open, its button (now Close) stays; the other gets out of the way — About
+   leaves the row entirely, so Message's Close sits where About's Close does. */
+.message-button, .about-button { transition: opacity 0.2s ease, background-color 0.15s ease; }
+#app[data-panel="about"] .message-button { opacity: 0; pointer-events: none; }
+#app[data-panel="message"] .about-button { display: none; }
 
 /* The design system Sheet's backdrop is a heavy black scrim with blur; match the About overlay's
    light scrim instead so the map stays visible around the floating glass sheet. (Unlayered CSS

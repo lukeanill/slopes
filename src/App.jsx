@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@lukeanill/ui/comp
 import { Toaster, toast } from '@lukeanill/ui/components/toast';
 import AddressSearchBar from './AddressSearchBar.jsx';
 import AboutPanel from './AboutPanel.jsx';
+import MessagePanel from './MessagePanel.jsx';
 import StatusMessage from './StatusMessage.jsx';
 import FlybyControl, { MAX_SCENES } from './FlybyControl.jsx';
 import { textOnColor } from './colorContrast.js';
@@ -133,6 +134,7 @@ function MapApp() {
   const [history, setHistory] = useState(loadHistory);
   const [searchOpen, setSearchOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [messageOpen, setMessageOpen] = useState(false);
   const [scenes, setScenes] = useState(loadScenes);
   const [theme, setTheme] = useState(loadTheme);
   // The map theme the UI is showing right now — lags `theme.map` while the map cross-fades, since
@@ -260,7 +262,7 @@ function MapApp() {
   return (
     <ThemeContext.Provider value={{ ...theme, map: uiMapTheme }}>
     <div id="app" data-search-open={searchOpen || undefined} data-sheet-open={selectedParcel ? true : undefined}
-      data-about-open={aboutOpen || undefined} data-flyby-playing={flybyPlaying || undefined}
+      data-about-open={aboutOpen || messageOpen || undefined} data-panel={aboutOpen ? 'about' : messageOpen ? 'message' : undefined} data-flyby-playing={flybyPlaying || undefined}
     >
       <div id="map"></div>
       {/* Marks the exact point being measured; the chip sits beside it rather than above, since in
@@ -370,7 +372,11 @@ function MapApp() {
           onOpenChange={setSearchOpen}
         />
       </div>
-      <AboutPanel onOpenChange={setAboutOpen} />
+      {/* Top-right: Message and About, each opening its own overlay; the other steps aside. */}
+      <div className="top-actions fixed top-4 right-4 z-[60] flex items-center gap-2">
+        <MessagePanel onOpenChange={setMessageOpen} />
+        <AboutPanel onOpenChange={setAboutOpen} />
+      </div>
       <StatusMessage
         uiMapTheme={uiMapTheme}
         status={slotStatus}
