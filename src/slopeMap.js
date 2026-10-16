@@ -146,12 +146,14 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // App-side ground colors per map, applied over whatever the style's flat layers carry (keep these
   // in step with the style in Studio, or remove an entry to use the style's own colors).
   const GROUND_COLORS = {
-    // Dark: the Dark 2D style (Standard's monochrome theme at night; roads, labels and buildings
-    // come from its config in Studio) — charcoal land, near-black water, parks a shade darker than
+    // Dark: the Dark 2D style (Standard's monochrome theme at night; roads, hillshade, terrain,
+    // labels and buildings come from it in Studio) — charcoal land, near-black water, parks a shade darker than
     // the land (GREENSPACE_COLORS), neutral sky: dark haze at the horizon, near-black above.
     dark: {
       land: '#222222',
       water: '#0b0b0b',
+      // Roads as in Dark 2D (set here too, so they don't wait on Mapbox's style cache).
+      config: { colorRoads: '#22262a', colorTrunks: '#22262a', colorMotorways: '#22262a' },
       sky: {
         color: '#1a1a1a',
         'high-color': '#0d0d0d',
@@ -168,6 +170,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     if (map.getLayer(FLAT_LAND_ID)) map.setPaintProperty(FLAT_LAND_ID, 'background-color', colors.land);
     if (map.getLayer(FLAT_WATER_ID)) map.setPaintProperty(FLAT_WATER_ID, 'fill-color', colors.water);
     if (colors.sky) map.setFog({ ...map.getFog(), ...colors.sky });
+    for (const [key, value] of Object.entries(colors.config ?? {})) map.setConfigProperty('basemap', key, value);
   }
   // Water and greenspace are redrawn from Mapbox Streets; styles built on Standard alone (like
   // Dark 2D) don't carry that source, so add it.
@@ -278,7 +281,28 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   function addDarkLabels() {
     if (currentMapStyle !== 'dark') return;
     for (const key of ['showPlaceLabels', 'showRoadLabels', 'showPointOfInterestLabels']) map.setConfigProperty('basemap', key, false);
+    // Dark 2D's hillside shading (warm highlight, Mapbox's defaults otherwise), under the labels as
+    // in the style — only if the style doesn't already bring it (e.g. an older cached copy).
+    if (!map.getStyle().layers.some((l) => l.type === 'hillshade')) {
+      map.addLayer({
+        id: 'hillshade',
+        type: 'hillshade',
+        source: DEM_SRC_ID,
+        paint: { 'hillshade-emissive-strength': 1, 'hillshade-highlight-color': '#634b4b' },
+      });
+    }
     for (const layer of DARK_LABEL_LAYERS) if (!map.getLayer(layer.id)) map.addLayer(layer);
+  }
+
+  // 3D terrain: Mapbox's elevation tiles at 0.9× exaggeration, as the dark Studio styles set it.
+  // Only for a style that doesn't turn terrain on itself.
+  const DEM_SRC_ID = 'mapbox-dem';
+  function addTerrain() {
+    // The elevation source is also what the dark map's hillside shading reads (addDarkLabels).
+    if (!map.getSource(DEM_SRC_ID)) {
+      map.addSource(DEM_SRC_ID, { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512 });
+    }
+    if (!map.getTerrain()) map.setTerrain({ source: DEM_SRC_ID, exaggeration: 0.9 });
   }
 
   // Mapbox Standard auto-selects a lightPreset based on real-world time of day if left unset,
@@ -291,6 +315,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     map.setConfigProperty('basemap', 'lightPreset', currentMapStyle === 'dark' ? 'night' : 'day');
     // Dark 2D turns 3D objects off; the app keeps its 3D buildings and landmarks.
     map.setConfigProperty('basemap', 'show3dObjects', true);
+    addTerrain();
     applyLabelStyling();
     addFlatGround();
     addDarkLabels(); // before the slope layer, as when they were part of the Studio style
