@@ -62,7 +62,7 @@ function rasterColorFor(stops) {
 }
 
 export const MAP_STYLES = {
-  dark: 'mapbox://styles/bzyluke/cmv97y6cz002m01qu25z7awxg', // Slopes Dark (flat land)
+  dark: 'mapbox://styles/bzyluke/cmvb4la97018v01s0ds5c64v9', // Dark 2D: Standard, monochrome theme, night
   light: 'mapbox://styles/bzyluke/cmv8hknck010t01s0digaae2t',
 };
 
@@ -119,10 +119,6 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // (Studio-only); label color and hiding transit labels are. The dark style needs light labels
   // for contrast; the light style keeps its own.
   function applyLabelStyling() {
-    if (currentMapStyle === 'dark') {
-      map.setConfigProperty('basemap', 'colorPlaceLabels', '#ffffff');
-      map.setConfigProperty('basemap', 'colorRoadLabels', '#ffffff');
-    }
     map.setConfigProperty('basemap', 'showTransitLabels', false);
   }
 
@@ -136,6 +132,12 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // from the active style's config, so Studio stays the source of truth for dark and light.
   const FLAT_LAND_ID = 'flat-land';
   const FLAT_WATER_ID = 'flat-water';
+  // Greenspace (parks, grass, golf courses, pitches, cemeteries, playgrounds) drawn back on top of
+  // the flat land, from Mapbox Streets' land-use — the flat land otherwise hides it. Dark: a shade
+  // below the land, as in the Dark 2D style; light: green.
+  const FLAT_GREEN_ID = 'flat-greenspace';
+  const GREENSPACE_CLASSES = ['park', 'grass', 'golf_course', 'pitch', 'cemetery', 'playground'];
+  const GREENSPACE_COLORS = { dark: '#1a1a1a', light: 'hsl(130, 28%, 62%)' };
   // A background layer (no source needed) in the 'bottom' slot — the same layers the uploadable
   // styles in mapbox-styles/ carry, so this only adds them to styles that don't have them yet.
   // Colors are read live from the basemap's config, so they always follow Studio's land/water.
@@ -144,49 +146,139 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // App-side ground colors per map, applied over whatever the style's flat layers carry (keep these
   // in step with the style in Studio, or remove an entry to use the style's own colors).
   const GROUND_COLORS = {
-    // Buildings: Standard's building color (its lighting shades it, so it renders a little
-    // differently from the value itself).
-    // Sky: dark haze at the horizon that blends into the land, near-black above, faint stars.
+    // Dark: the Dark 2D style (Standard's monochrome theme at night; roads, labels and buildings
+    // come from its config in Studio) — charcoal land, near-black water, parks a shade darker than
+    // the land (GREENSPACE_COLORS), neutral sky: dark haze at the horizon, near-black above.
     dark: {
-      land: 'hsl(206, 8%, 18%)',
-      water: 'hsl(204, 13%, 27%)',
-      buildings: '#FFE0A8', // warm on purpose: night lighting tints buildings blue, so this renders neutral grey
+      land: '#222222',
+      water: '#0b0b0b',
       sky: {
-        color: 'hsl(206, 10%, 14%)',
-        'high-color': 'hsl(214, 30%, 9%)',
-        'space-color': 'hsl(220, 30%, 4%)',
+        color: '#1a1a1a',
+        'high-color': '#0d0d0d',
+        'space-color': '#050505',
         'horizon-blend': 0.08,
         'star-intensity': 0.35,
       },
     },
   };
   function applyGroundColors() {
+    if (map.getLayer(FLAT_GREEN_ID)) map.setPaintProperty(FLAT_GREEN_ID, 'fill-color', GREENSPACE_COLORS[currentMapStyle]);
     const colors = GROUND_COLORS[currentMapStyle];
     if (!colors) return;
     if (map.getLayer(FLAT_LAND_ID)) map.setPaintProperty(FLAT_LAND_ID, 'background-color', colors.land);
     if (map.getLayer(FLAT_WATER_ID)) map.setPaintProperty(FLAT_WATER_ID, 'fill-color', colors.water);
-    if (colors.buildings) map.setConfigProperty('basemap', 'colorBuildings', colors.buildings);
     if (colors.sky) map.setFog({ ...map.getFog(), ...colors.sky });
   }
+  // Water and greenspace are redrawn from Mapbox Streets; styles built on Standard alone (like
+  // Dark 2D) don't carry that source, so add it.
+  const STREETS_SRC_ID = 'composite';
   function addFlatGround() {
-    if (map.getLayer(FLAT_LAND_ID)) return applyGroundColors();
-    map.addLayer({
-      id: FLAT_LAND_ID,
-      type: 'background',
-      slot: 'bottom',
-      paint: { 'background-color': LAND_COLOR, 'background-emissive-strength': 1 }, // emissive: unaffected by lighting
-    });
-    if (map.getSource('composite') && !map.getLayer(FLAT_WATER_ID)) {
+    if (!map.getSource(STREETS_SRC_ID)) map.addSource(STREETS_SRC_ID, { type: 'vector', url: 'mapbox://mapbox.mapbox-streets-v8' });
+    if (!map.getLayer(FLAT_LAND_ID)) {
+      map.addLayer({
+        id: FLAT_LAND_ID,
+        type: 'background',
+        slot: 'bottom',
+        paint: { 'background-color': LAND_COLOR, 'background-emissive-strength': 1 }, // emissive: unaffected by lighting
+      });
+    }
+    if (!map.getLayer(FLAT_GREEN_ID)) {
+      map.addLayer(
+        {
+          id: FLAT_GREEN_ID,
+          type: 'fill',
+          source: STREETS_SRC_ID,
+          'source-layer': 'landuse',
+          slot: 'bottom',
+          filter: ['match', ['get', 'class'], GREENSPACE_CLASSES, true, false],
+          paint: { 'fill-color': GREENSPACE_COLORS[currentMapStyle], 'fill-emissive-strength': 1 },
+        },
+        map.getLayer(FLAT_WATER_ID) ? FLAT_WATER_ID : undefined // under the water (ponds in parks)
+      );
+    }
+    if (!map.getLayer(FLAT_WATER_ID)) {
       map.addLayer({
         id: FLAT_WATER_ID,
         type: 'fill',
-        source: 'composite',
+        source: STREETS_SRC_ID,
         'source-layer': 'water',
         slot: 'bottom',
         paint: { 'fill-color': WATER_COLOR, 'fill-emissive-strength': 1 },
       });
     }
     applyGroundColors();
+  }
+
+  // The dark map's labels: the Overpass Mono place, street and house-number labels from the
+  // previous dark Studio style (Slopes Dark), copied as-is, in place of Standard's own place, road
+  // and point-of-interest labels. Landmark icons and labels stay Standard's.
+  const DARK_LABEL_FONT = ['Overpass Mono Regular', 'Arial Unicode MS Regular'];
+  const DARK_LABEL_LAYERS = [
+    {
+      id: 'place-label',
+      type: 'symbol',
+      source: STREETS_SRC_ID,
+      'source-layer': 'place_label',
+      minzoom: 3.5,
+      maxzoom: 14,
+      layout: {
+        'text-size': ['interpolate', ['linear'], ['get', 'symbolrank'], 0, 15, 2, 14, 4, 13, 6, 12, 8, 11, 10, 10],
+        'symbol-sort-key': ['get', 'symbolrank'],
+        'text-font': DARK_LABEL_FONT,
+        'text-justify': 'auto',
+        'text-offset': [0, 0.5],
+        'icon-size': 0.3,
+        'text-anchor': 'top',
+        'text-field': ['coalesce', ['get', 'name_en'], ['get', 'name']],
+        'text-letter-spacing': -0.01,
+      },
+      paint: {
+        'text-halo-width': 1,
+        'text-halo-color': '#1c1f21',
+        'text-color': ['interpolate', ['linear'], ['get', 'symbolrank'], 0, '#90b6e4', 4, '#a1dae2', 6, 'rgba(255, 255, 255, 0.85)', 14, '#ffffff', 18, '#ffffff'],
+        'text-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0, 2.5, 0, 3, 1, 12, 1, 13, 0, 22, 0],
+        'icon-image-cross-fade': 1,
+      },
+    },
+    {
+      id: 'road',
+      type: 'symbol',
+      source: STREETS_SRC_ID,
+      'source-layer': 'road',
+      layout: {
+        'symbol-placement': 'line-center',
+        'text-field': ['to-string', ['get', 'name']],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 0, 11, 16, 13],
+        'text-font': DARK_LABEL_FONT,
+      },
+      paint: {
+        'text-color': '#ffffff',
+        'text-halo-color': '#000000',
+        'text-halo-width': 1,
+        'text-halo-blur': 2,
+        'text-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0, 11.5, 0, 12.5, 1],
+      },
+    },
+    {
+      id: 'housenum-label',
+      type: 'symbol',
+      source: STREETS_SRC_ID,
+      'source-layer': 'housenum_label',
+      minzoom: 16,
+      layout: {
+        'text-field': ['to-string', ['get', 'house_num']],
+        'text-font': ['Overpass Mono SemiBold', 'Arial Unicode MS Regular'],
+        'text-size': 11,
+        'text-padding': 8,
+        'symbol-avoid-edges': true,
+      },
+      paint: { 'text-color': 'rgba(255, 255, 255, 0.75)', 'text-halo-width': 1, 'text-halo-color': '#000000', 'text-halo-blur': 2 },
+    },
+  ];
+  function addDarkLabels() {
+    if (currentMapStyle !== 'dark') return;
+    for (const key of ['showPlaceLabels', 'showRoadLabels', 'showPointOfInterestLabels']) map.setConfigProperty('basemap', key, false);
+    for (const layer of DARK_LABEL_LAYERS) if (!map.getLayer(layer.id)) map.addLayer(layer);
   }
 
   // Mapbox Standard auto-selects a lightPreset based on real-world time of day if left unset,
@@ -197,8 +289,11 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
   // setMapStyle swaps the style.
   map.on('style.load', () => {
     map.setConfigProperty('basemap', 'lightPreset', currentMapStyle === 'dark' ? 'night' : 'day');
+    // Dark 2D turns 3D objects off; the app keeps its 3D buildings and landmarks.
+    map.setConfigProperty('basemap', 'show3dObjects', true);
     applyLabelStyling();
     addFlatGround();
+    addDarkLabels(); // before the slope layer, as when they were part of the Studio style
     addSlopeLayer(); // added first so parcels/selection/preview layers draw above it
     addParcelLayer();
     addSelectionLayer();
