@@ -152,8 +152,9 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     dark: {
       land: '#222222',
       water: '#0b0b0b',
-      // Roads as in Dark 2D (set here too, so they don't wait on Mapbox's style cache).
-      config: { colorRoads: '#22262a', colorTrunks: '#22262a', colorMotorways: '#22262a' },
+      // Roads lighter than Dark 2D's #22262a (monochrome night mutes this a lot); no
+      // pedestrian paths.
+      config: { colorRoads: '#50565e', colorTrunks: '#50565e', colorMotorways: '#50565e', showPedestrianRoads: false },
       sky: {
         color: '#1a1a1a',
         'high-color': '#0d0d0d',
