@@ -113,6 +113,13 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
     ...DEFAULT_CAMERA,
   });
 
+  // Mapbox only re-measures its container on window resize. If the container's size changes any
+  // other way — a phone's toolbars settling during load, the page opening in a panel that's still
+  // animating open — the canvas stays at the size it was first given (stretched, or not filling
+  // the screen). Watch the container itself and resize the map whenever its box changes.
+  const containerSize = new ResizeObserver(() => map.resize()); // disconnected on 'remove'
+  containerSize.observe(map.getContainer());
+
   // Both styles are Standard-based, so their basemap labels live in an import fragment —
   // there's no setPaintProperty/setLayoutProperty access to those layers, only the fixed set
   // of config toggles the style exposes. text-transform/letter-spacing aren't among them
@@ -1713,6 +1720,7 @@ export function initSlopeMap({ onSlopeHover, onParcelSelect, onStatusChange, onP
 
   map.on('remove', () => {
     listeners.abort();
+    containerSize.disconnect();
     removed = true;
     clearTimeout(parcelRefreshTimer);
     setStripesAnimating(false);

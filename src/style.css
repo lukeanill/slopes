@@ -42,7 +42,6 @@
   --glass-tint-border: rgba(255, 255, 255, 0.15);
   --glass-selected: #ffffff; /* theme menu's selected-option ring */
   --about-accent: #dd7ff4;
-  --bottom-fade: rgba(44, 46, 63, 0.85);
 }
 :root[data-theme="light"] {
   --glass-bg: rgba(255, 255, 255, 0.2);
@@ -57,7 +56,6 @@
   --glass-tint-border: rgba(0, 0, 0, 0.1);
   --glass-selected: #000000;
   --about-accent: #8a2aa3;
-  --bottom-fade: rgba(235, 230, 229, 0.7);
 }
 
 /* Shared glass surface. In the components layer so Tailwind utilities (hover:bg-…, blur, a
@@ -73,16 +71,6 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 #map { position: fixed; inset: 0; }
-
-#bottom-fade {
-  position: fixed; left: 0; right: 0; bottom: 0; height: 140px; z-index: 4;
-  pointer-events: none;
-  background: linear-gradient(to bottom, transparent 0%, var(--bottom-fade) 100%);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  mask-image: linear-gradient(to bottom, transparent 0%, black 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 100%);
-}
 
 #map-controls {
   position: fixed; right: 20px; bottom: 24px; z-index: 6;
@@ -119,6 +107,14 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
   transform: translateX(-50%);
   display: flex; justify-content: center;
   transition: opacity 0.25s ease, translate 0.35s cubic-bezier(0.22, 1, 0.36, 1), filter 0.2s ease;
+}
+/* On phones the top row (search, message, About) leaves no room in the middle, so messages and the
+   flyby control drop to a row of their own just below it. */
+@media (max-width: 639px) {
+  .status-slot { top: 72px; max-width: calc(100vw - 32px); }
+  /* iPhones (Safari and Chrome alike) zoom the whole page into any field with text under 16px
+     when it's tapped, and leave it zoomed — the map then looks cropped and the wrong size. */
+  input, textarea, select { font-size: 16px !important; }
 }
 /* The message itself; its surface (metal while loading / prompting, quiet otherwise) is the Metal
    wrapper's — see StatusMessage. */

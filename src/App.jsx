@@ -362,7 +362,6 @@ function MapApp() {
           ) : null}
         </SheetContent>
       </Sheet>
-      <div id="bottom-fade"></div>
       <div className="search-control fixed top-4 left-4 z-10">
         <AddressSearchBar
           proximity={SEARCH_PROXIMITY}

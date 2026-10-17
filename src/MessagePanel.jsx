@@ -259,7 +259,7 @@ export default function MessagePanel({ onOpenChange }) {
             </motion.div>
           ) : (
             <>
-              <h2 className="text-center text-[38px] leading-[1.4] sm:text-[52px]" style={SERIF}>
+              <h2 className="text-center text-[32px] leading-[1.4] sm:text-[52px]" style={SERIF}>
                 <span style={{ fontWeight: 200 }}>What’s on your mind</span>
                 <br />
                 <span style={{ fontWeight: 800 }}>
