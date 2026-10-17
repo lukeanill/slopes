@@ -1,81 +1,59 @@
 import { useState } from 'react';
 import { Layers } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverPanel } from '@lukeanill/ui/components/animate-ui/components/base/popover';
-import { Slider } from '@lukeanill/ui/components/slider';
 import Metal, { METAL_HOST } from './Metal.jsx';
+import { SLOPE_PALETTES, SLOPE_PALETTE_IDS } from './slopeMap.js';
+import { OPACITY_OPTIONS } from './theme.js';
 import imgMapDark from './assets/theme/map-dark.jpg';
-import imgMapLightBase from './assets/theme/map-light-base.png';
-import imgMapLightOverlay from './assets/theme/map-light-overlay.jpg';
+import imgMapLight from './assets/theme/map-light.jpg';
 
-// Theme menu from the SLOPES Figma (nodes 10:90 / 10:135 button, 10:94 / 10:123 menu): pick the
-// basemap (which also flips the UI between dark and light glass) and the slope palette.
-// The Figma's Söhne isn't loaded; Inter stands in, as elsewhere.
+// Theme menu from the SLOPES Figma (node 10:94): the basemap (which also flips the UI between dark
+// and light), the slope palette and the slope layer's opacity. The chosen option in each row is
+// ringed in live metal (see Metal.jsx); the others sit quietly. Söhne → Inter, as elsewhere.
 const SANS = { fontFamily: "'Inter', system-ui, sans-serif", fontWeight: 400 };
+const LABEL = 'w-full text-[12px] leading-[1.4] tracking-[0.12px] opacity-80';
 
-// Each palette's swatch, from the design's "Rainbow / Muted / Beam Radial" styles: the palette
-// radiating out from the steepest color at the center to the faint 0% color at the rim.
-const radial = (stops) => `radial-gradient(circle closest-side, ${stops.map(([c, o]) => `${c} ${o}%`).join(', ')})`;
-const SLOPE_OPTIONS = [
-  {
-    id: 'rainbow',
-    label: 'Rainbow',
-    swatch: radial([
-      ['rgba(175,49,55,1)', 0], ['rgba(175,49,55,1)', 10], ['rgba(192,88,68,1)', 15], ['rgba(208,126,80,1)', 20],
-      ['rgba(200,164,55,1)', 25], ['rgba(191,202,29,1)', 30], ['rgba(150,197,58,1)', 35], ['rgba(109,192,87,1)', 40],
-      ['rgba(62,175,109,1)', 45], ['rgba(39,167,119,1)', 47.5], ['rgba(15,158,130,1)', 50], ['rgba(38,135,149,0.95)', 55],
-      ['rgba(61,111,168,0.9)', 60], ['rgba(107,86,187,0.8)', 70], ['rgba(137,67,147,0.7)', 80], ['rgba(137,67,147,0.1)', 100],
-    ]),
-  },
-  {
-    id: 'muted',
-    label: 'Muted',
-    swatch: radial([
-      ['rgba(237,128,51,1)', 0], ['rgba(237,129,52,1)', 10], ['rgba(245,165,86,1)', 20], ['rgba(250,200,122,1)', 30],
-      ['rgba(250,223,153,1)', 40], ['rgba(251,245,183,1)', 50], ['rgba(228,241,188,0.9)', 60], ['rgba(177,234,202,0.8)', 70],
-      ['rgba(125,229,223,0.7)', 80], ['rgba(125,229,223,0.1)', 100],
-    ]),
-  },
-  {
-    id: 'beam',
-    label: 'Beam',
-    swatch: radial([
-      ['rgba(250,197,30,1)', 0], ['rgba(250,197,30,1)', 10], ['rgba(249,148,43,1)', 20], ['rgba(236,111,59,1)', 30],
-      ['rgba(215,77,80,1)', 40], ['rgba(190,47,101,1)', 50], ['rgba(164,27,120,0.95)', 55], ['rgba(138,7,138,0.9)', 60],
-      ['rgba(102,4,142,0.85)', 65], ['rgba(65,1,145,0.8)', 70], ['rgba(38,1,132,0.7)', 80], ['rgba(38,1,132,0.1)', 100],
-    ]),
-  },
-];
-
-// 2px ring on the chosen option — white on the dark glass, black on the light glass.
-const selectedRing = (selected) => (selected ? 'border-2 border-[var(--glass-selected)]' : 'border-2 border-transparent');
-const LABEL = 'text-[13px] leading-[1.4] tracking-[0.13px] opacity-80';
-
-function MapThumb({ theme }) {
+const MAPS = [
   // Crops copied from the design's image fills.
-  return theme === 'dark' ? (
-    <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-[10px] bg-[#d9d9d9]">
-      <img alt="" src={imgMapDark} className="absolute top-[-29.53%] left-[-68.58%] h-[163.26%] w-[251.04%] max-w-none" />
-    </span>
-  ) : (
-    <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-[10px]">
-      <img alt="" src={imgMapLightBase} className="absolute size-full max-w-none object-cover" />
-      <img alt="" src={imgMapLightOverlay} className="absolute top-[-34.37%] left-[-62.43%] h-[190.41%] w-[292.79%] max-w-none" />
-    </span>
+  { id: 'dark', label: 'Dark map', src: imgMapDark, crop: 'top-[-29.53%] left-[-68.58%] h-[163.26%] w-[251.04%]' },
+  { id: 'light', label: 'Light map', src: imgMapLight, crop: 'top-[-34.37%] left-[-62.43%] h-[190.41%] w-[292.79%]' },
+];
+const SLOPE_LABELS = { rainbow: 'Rainbow', muted: 'Muted', beam: 'Beam', aurora: 'Aurora', indigo: 'Indigo' };
+
+// A palette as a CSS gradient, low slope (faint) to steep, at `angle`. Built from the palette data
+// so the menu always shows exactly what the map draws.
+const paletteGradient = (stops, angle = 90) =>
+  `linear-gradient(${angle}deg, ${stops
+    .filter(([pct]) => pct <= 100)
+    .map(([pct, r, g, b, a]) => `rgba(${r}, ${g}, ${b}, ${a}) ${pct}%`)
+    .join(', ')})`;
+
+// One choice: ringed in metal when it's the active one. The 2 px inset leaves room for the ring
+// around the swatch inside.
+function Choice({ active, label, onClick, radius, className = '', children }) {
+  return (
+    <Metal variant="button" active={active} className="theme-choice">
+      <button
+        type="button"
+        aria-label={label}
+        aria-pressed={active}
+        onClick={onClick}
+        className={`block cursor-pointer bg-transparent p-0.5 ${className}`}
+        style={{ borderRadius: radius }}
+      >
+        <span className="relative block size-full overflow-hidden" style={{ borderRadius: radius - 2 }}>
+          {children}
+        </span>
+      </button>
+    </Metal>
   );
 }
-
-// The design-system slider, recolored for the glass: a faint track, filled with the selected-ring color.
-const SLIDER_COLORS = {
-  '--muted': 'var(--glass-tint)',
-  '--color-muted': 'var(--glass-tint)',
-  '--primary': 'var(--glass-selected)',
-  '--color-primary': 'var(--glass-selected)',
-};
 
 // onChange receives a partial theme ({ map }, { slope } or { opacity }).
 export default function ThemeMenu({ theme, onChange }) {
   // The button turns metal while its menu is open.
   const [open, setOpen] = useState(false);
+  const stops = SLOPE_PALETTES[theme.map === 'light' ? 'light' : 'dark'];
   return (
     <Popover onOpenChange={setOpen}>
       <Metal active={open}>
@@ -88,54 +66,63 @@ export default function ThemeMenu({ theme, onChange }) {
         align="end"
         sideOffset={12}
         // .quiet-panel is unlayered, so it wins over the popover's own bg/border/shadow utilities.
-        className="quiet-panel flex w-[186px] flex-col items-center gap-6 rounded-[24px] border-0 p-6"
+        className="quiet-panel flex w-[176px] flex-col items-center gap-4 rounded-[24px] border-0 px-4 py-5"
         style={SANS}
       >
-        <section className="flex flex-col items-center gap-4">
-          <h3 className={LABEL}>MAP</h3>
+        <section className="flex w-full flex-col items-center gap-2">
+          <h3 className={LABEL}>Map Style</h3>
           <div className="flex w-[138px] gap-3">
-            {['dark', 'light'].map((id) => (
-              <button
-                key={id}
-                type="button"
-                aria-label={`${id === 'dark' ? 'Dark' : 'Light'} map`}
-                aria-pressed={theme.map === id}
-                onClick={() => onChange({ map: id })}
-                className={`relative h-[52px] flex-1 cursor-pointer rounded-[12px] transition-[border-color] ${selectedRing(theme.map === id)}`}
+            {MAPS.map((m) => (
+              <Choice
+                key={m.id}
+                active={theme.map === m.id}
+                label={m.label}
+                onClick={() => onChange({ map: m.id })}
+                radius={16}
+                className="h-14 w-[63px]"
               >
-                <MapThumb theme={id} />
-              </button>
+                <img alt="" src={m.src} className={`pointer-events-none absolute max-w-none opacity-80 ${m.crop}`} />
+              </Choice>
             ))}
           </div>
         </section>
-        <section className="flex flex-col items-center gap-4">
-          <h3 className={LABEL}>SLOPE</h3>
-          <div className="flex w-[138px] gap-2">
-            {SLOPE_OPTIONS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                aria-label={`${option.label} slope colors`}
-                aria-pressed={theme.slope === option.id}
-                onClick={() => onChange({ slope: option.id })}
-                className={`aspect-square flex-1 cursor-pointer rounded-full transition-[border-color] ${selectedRing(theme.slope === option.id)}`}
-                style={{ backgroundImage: option.swatch }}
-              />
+        <section className="flex w-full flex-col items-center gap-4">
+          <h3 className={LABEL}>Slope Colors</h3>
+          <div className="flex flex-col gap-4">
+            {SLOPE_PALETTE_IDS.map((id) => (
+              <Choice
+                key={id}
+                active={theme.slope === id}
+                label={`${SLOPE_LABELS[id]} slope colors`}
+                onClick={() => onChange({ slope: id })}
+                radius={4}
+                className="h-5 w-36"
+              >
+                <span className="absolute inset-0" style={{ backgroundImage: paletteGradient(stops[id]) }} />
+              </Choice>
             ))}
           </div>
         </section>
-        <section className="flex flex-col items-center gap-4">
-          <h3 className={LABEL}>OPACITY</h3>
-          <Slider
-            className="w-[138px]"
-            style={SLIDER_COLORS}
-            min={10}
-            max={100}
-            step={5}
-            value={[Math.round(theme.opacity * 100)]}
-            onValueChange={(v) => onChange({ opacity: (Array.isArray(v) ? v[0] : v) / 100 })}
-            aria-label="Slope opacity"
-          />
+        <section className="flex w-full flex-col items-center gap-2">
+          <h3 className={LABEL}>Slope Opacity</h3>
+          <div className="flex gap-3">
+            {OPACITY_OPTIONS.map((value) => (
+              <Choice
+                key={value}
+                active={theme.opacity === value}
+                label={`Slope opacity ${Math.round(value * 100)}%`}
+                onClick={() => onChange({ opacity: value })}
+                radius={12}
+                className="size-10"
+              >
+                {/* The current palette, shown at this opacity. */}
+                <span
+                  className="absolute inset-0"
+                  style={{ backgroundImage: paletteGradient(stops[theme.slope] ?? stops.rainbow, 135), opacity: value }}
+                />
+              </Choice>
+            ))}
+          </div>
         </section>
       </PopoverPanel>
     </Popover>

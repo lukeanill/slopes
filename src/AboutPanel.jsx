@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
+import { Info } from 'lucide-react';
 import arrowIcon from './assets/about/arrow.svg';
-import { PANEL, PanelOverlay, SANS, SANS_BOLD, SERIF, panelVariants } from './overlayPanels.jsx';
+import { PANEL, PanelButton, PanelOverlay, SANS, SANS_BOLD, SERIF, panelVariants } from './overlayPanels.jsx';
 
-// "About" overlay from the SLOPES Figma (node 2:291): a pill top-right that opens two frosted
-// panels over the map (see overlayPanels.jsx).
+// "About" overlay from the SLOPES Figma (node 2:291): an info button top-right that opens two
+// frosted panels over the map (see overlayPanels.jsx).
 
 const BENEFITS = [
   {
@@ -142,27 +143,13 @@ export default function AboutPanel({ onOpenChange }) {
 
   return (
     <>
-      <motion.button
-        type="button"
+      <PanelButton
+        open={open}
         onClick={() => setOpen((o) => !o)}
-        whileTap={{ scale: 0.96 }}
-        aria-expanded={open}
-        className="quiet-control about-button relative z-[60] h-11 cursor-pointer rounded-full px-5 text-sm"
-        style={SANS_BOLD}
-      >
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={open ? 'close' : 'about'}
-            className="block"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.15 }}
-          >
-            {open ? 'Close' : 'About'}
-          </motion.span>
-        </AnimatePresence>
-      </motion.button>
+        label="About SLOPES"
+        icon={<Info size={18} strokeWidth={1.75} className="block" />}
+        className="about-button"
+      />
 
       <PanelOverlay open={open} onClose={() => setOpen(false)}>
         <motion.section custom={0} variants={panelVariants} initial="hidden" animate="shown" exit="exit" className={`${PANEL} flex flex-col items-center gap-10 text-[var(--glass-fg)]`}>

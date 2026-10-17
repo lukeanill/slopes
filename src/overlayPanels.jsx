@@ -26,9 +26,9 @@ export const panelVariants = {
 export const PANEL = 'w-full rounded-[28px] bg-[var(--glass-bg-panel)] p-6 backdrop-blur-xl sm:rounded-[40px] sm:p-20';
 
 // The full-screen layer the panels sit in. Rendered into <body>, so the top-right buttons (which
-// fade and shift aside with the rest of the controls) never become its containing block. Click
-// the scrim or press Escape to close.
-export function PanelOverlay({ open, onClose, children }) {
+// fade and shift aside with the rest of the controls) never become its containing block. Escape
+// closes it; so does clicking the scrim, unless `closeOnScrim` is false.
+export function PanelOverlay({ open, onClose, closeOnScrim = true, children }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -47,11 +47,11 @@ export function PanelOverlay({ open, onClose, children }) {
           initial={{ backgroundColor: 'rgba(4,4,4,0)' }}
           animate={{ backgroundColor: 'rgba(4,4,4,0.12)', transition: { duration: 0.35, ease: EASE_OUT } }}
           exit={{ backgroundColor: 'rgba(4,4,4,0)', transition: { duration: 0.25, ease: 'easeIn' } }}
-          onClick={(e) => e.target === e.currentTarget && onClose()}
+          onClick={(e) => closeOnScrim && e.target === e.currentTarget && onClose()}
         >
           <div
             className="mx-auto flex w-full max-w-[955px] flex-col gap-5 px-4 pt-20 pb-16 sm:gap-10 sm:pt-[70px]"
-            onClick={(e) => e.target === e.currentTarget && onClose()}
+            onClick={(e) => closeOnScrim && e.target === e.currentTarget && onClose()}
           >
             {children}
           </div>
@@ -59,5 +59,35 @@ export function PanelOverlay({ open, onClose, children }) {
       )}
     </AnimatePresence>,
     document.body
+  );
+}
+
+// The top-right button for an overlay: a 40 px round icon button while closed (like the map
+// controls), a "Close" pill while open (`closeLabel` — "Skip" for the walkthrough). About, Message
+// and the walkthrough share it, so it always looks the same.
+export function PanelButton({ open, onClick, icon, label, closeLabel = 'Close', className = '' }) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      whileTap={{ scale: 0.96 }}
+      aria-expanded={open}
+      aria-label={open ? undefined : label}
+      className={`quiet-control relative z-[60] flex cursor-pointer items-center justify-center rounded-full ${open ? 'h-11 px-5 text-sm' : 'size-10'} ${className}`}
+      style={SANS_BOLD}
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.span
+          key={open ? 'close' : 'icon'}
+          className="block"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.15 }}
+        >
+          {open ? closeLabel : icon}
+        </motion.span>
+      </AnimatePresence>
+    </motion.button>
   );
 }

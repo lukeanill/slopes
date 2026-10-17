@@ -20,31 +20,46 @@ import iconCrosshairSimple from './icons/CrosshairSimple.svg?raw';
 export const MAP_MIN_ZOOM = 4.5;
 export const SLOPE_MIN_ZOOM = 11;
 
-// Slope palettes from the SLOPES Figma ("New Slope Gradients"): Rainbow, Muted and Beam, each with
-// a version tuned for the dark map and one for the light map — they share the steep end and differ
-// in the faint low-slope colors, which have to read against that basemap. Design stops are at
+// Slope palettes from the SLOPES Figma ("New Slope Gradients", node 10:84): five per map, each with
+// a version for the dark map and one for the light map — they're identical except where the faint
+// low-slope color has to read against that basemap (Rainbow and Beam). Design stops are at
 // 0/20/30/…/90/100%; the top color is held out to 150% so every palette has one stop per
-// BAND_DESCRIPTORS entry. All fade to fully transparent at 0%.
+// BAND_DESCRIPTORS entry. All fade to fully transparent at 0%. Ids: rainbow, muted (teal → peach),
+// beam (violet → gold), aurora (indigo → cyan → green), indigo (one violet, deepening).
 const PCTS = [0, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 const palette = (colors) => {
   const stops = colors.map((c, i) => [PCTS[i], ...c]);
   return [...stops, [150, ...colors[colors.length - 1]]];
 };
-const STEEP = {
-  rainbow: [[15, 158, 130, 1], [109, 192, 87, 1], [191, 202, 29, 1], [208, 126, 80, 1], [175, 49, 55, 1], [175, 49, 55, 1]],
-  muted: [[251, 245, 183, 1], [250, 223, 153, 1], [250, 200, 122, 1], [245, 165, 86, 1], [237, 129, 52, 1], [237, 128, 51, 1]],
-  beam: [[190, 47, 101, 1], [215, 77, 80, 1], [236, 111, 59, 1], [249, 148, 43, 1], [250, 197, 30, 1], [250, 197, 30, 1]],
-};
+const RAINBOW_STEEP = [[107, 86, 187, 0.6], [61, 111, 168, 0.8], [15, 158, 130, 1], [109, 192, 87, 1], [191, 202, 29, 1], [208, 126, 80, 1], [175, 49, 55, 1], [175, 49, 55, 1]];
+const BEAM_STEEP = [[65, 1, 145, 0.6], [138, 7, 138, 0.8], [190, 47, 101, 1], [215, 77, 80, 1], [236, 111, 59, 1], [249, 148, 43, 1], [250, 197, 30, 1], [250, 197, 30, 1]];
+const MUTED = palette([
+  [110, 214, 219, 0], [110, 214, 219, 0.4], [110, 214, 219, 1], [110, 214, 219, 1], [124, 215, 189, 1],
+  [169, 210, 138, 1], [208, 201, 122, 1], [231, 193, 119, 1], [255, 172, 133, 1], [255, 172, 133, 1],
+]);
+const AURORA = palette([
+  [59, 22, 190, 0], [59, 22, 190, 0.4], [59, 22, 190, 0.6], [59, 22, 190, 1], [38, 80, 207, 1],
+  [67, 93, 216, 1], [21, 155, 200, 1], [18, 212, 197, 1], [17, 255, 132, 1], [21, 254, 137, 1],
+]);
+const INDIGO = palette([
+  [54, 24, 161, 0], [54, 24, 161, 0.4], [54, 24, 161, 0.4], [54, 24, 161, 0.5], [54, 24, 161, 0.6],
+  [54, 24, 161, 0.7], [54, 24, 161, 0.8], [54, 24, 161, 0.9], [54, 24, 161, 1], [54, 24, 161, 1],
+]);
+export const SLOPE_PALETTE_IDS = ['rainbow', 'muted', 'beam', 'aurora', 'indigo'];
 export const SLOPE_PALETTES = {
   dark: {
-    rainbow: palette([[67, 42, 125, 0], [67, 42, 125, 0.4], [107, 86, 187, 0.6], [61, 111, 168, 0.8], ...STEEP.rainbow]),
-    muted: palette([[72, 131, 128, 0], [72, 131, 128, 0.4], [177, 234, 202, 0.6], [228, 241, 188, 0.8], ...STEEP.muted]),
-    beam: palette([[41, 24, 84, 0], [41, 24, 84, 0.4], [65, 1, 145, 0.6], [138, 7, 138, 0.8], ...STEEP.beam]),
+    rainbow: palette([[67, 42, 125, 0], [67, 42, 125, 0.4], ...RAINBOW_STEEP]),
+    muted: MUTED,
+    beam: palette([[41, 24, 84, 0], [41, 24, 84, 0.4], ...BEAM_STEEP]),
+    aurora: AURORA,
+    indigo: INDIGO,
   },
   light: {
-    rainbow: palette([[162, 131, 166, 0], [162, 131, 166, 0.4], [107, 86, 187, 0.6], [61, 111, 168, 0.8], ...STEEP.rainbow]),
-    muted: palette([[184, 226, 223, 0], [184, 226, 223, 0.4], [177, 234, 202, 0.6], [228, 241, 188, 0.8], ...STEEP.muted]),
-    beam: palette([[97, 78, 146, 0], [97, 78, 146, 0.4], [65, 1, 145, 0.6], [138, 7, 138, 0.8], ...STEEP.beam]),
+    rainbow: palette([[162, 131, 166, 0], [162, 131, 166, 0.4], ...RAINBOW_STEEP]),
+    muted: MUTED,
+    beam: palette([[97, 78, 146, 0], [97, 78, 146, 0.4], ...BEAM_STEEP]),
+    aurora: AURORA,
+    indigo: INDIGO,
   },
 };
 const paletteFor = (mapStyle, name) => SLOPE_PALETTES[mapStyle]?.[name] ?? SLOPE_PALETTES.dark.rainbow;

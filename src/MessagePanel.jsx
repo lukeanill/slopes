@@ -1,10 +1,9 @@
-import { useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { MessageCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { EASE_OUT, PANEL, PanelOverlay, SANS, SANS_BOLD, SERIF, panelVariants } from './overlayPanels.jsx';
 
-// "Message" overlay from the SLOPES Figma (section 23:581): a round button beside About that opens
-// one frosted panel. Pick what it's about, then:
+// "Message" overlay from the SLOPES Figma (section 23:581): one frosted panel, opened from the
+// message button under the map's zoom controls. Pick what it's about, then:
 //   idea     → a few pointers, then name / email / the idea / why it matters
 //   issue    → name / location / device and browser / what happened
 //   together → ways to reach Luke directly
@@ -194,47 +193,22 @@ function MessageForm({ topic, onSent }) {
   );
 }
 
-export default function MessagePanel({ onOpenChange }) {
-  const [open, setOpenState] = useState(false);
+// The panel itself; the page owns `open` and places the button that opens it (with the map controls)
+// and the Close pill (in About's spot, top right).
+export default function MessagePanel({ open, onOpenChange }) {
   const [topic, setTopic] = useState(null);
   const [sent, setSent] = useState(false);
-  const setOpen = (next) => {
-    setOpenState(next);
-    onOpenChange?.(next);
-    // A sent message starts afresh next time; an unsent draft is kept.
-    if (!next && sent) {
+  // A sent message starts afresh next time; an unsent draft is kept.
+  useEffect(() => {
+    if (!open && sent) {
       setSent(false);
       setTopic(null);
     }
-  };
+  }, [open, sent]);
+  const setOpen = (next) => onOpenChange?.(next);
 
   return (
     <>
-      <motion.button
-        type="button"
-        onClick={() => setOpen(!open)}
-        whileTap={{ scale: 0.96 }}
-        aria-expanded={open}
-        aria-label={open ? undefined : 'Send a message'}
-        // Closed: a 40 px round icon button, like the map controls. Open: the same "Close" pill as
-        // About's (About steps out of the row meanwhile, so it sits in the same spot).
-        className={`quiet-control message-button relative z-[60] flex cursor-pointer items-center justify-center rounded-full ${open ? 'h-11 px-5 text-sm' : 'size-10'}`}
-        style={SANS_BOLD}
-      >
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={open ? 'close' : 'message'}
-            className="block"
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.15 }}
-          >
-            {open ? 'Close' : <MessageCircle size={18} strokeWidth={1.75} className="block" />}
-          </motion.span>
-        </AnimatePresence>
-      </motion.button>
-
       <PanelOverlay open={open} onClose={() => setOpen(false)}>
         <motion.section
           custom={0}
