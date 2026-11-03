@@ -52,12 +52,12 @@ export default function FlybyControl({
       key={scene.id}
       {...POP}
       animate={{ opacity: playing && i > playingIndex ? 0.4 : 1, scale: 1 }}
-      className="flex h-10 w-8 shrink-0 items-center justify-center"
+      className="flex h-10 w-[22px] shrink-0 items-center justify-center sm:w-8"
     >
       {i + 1}
     </motion.span>
   ));
-  const numbersHost = `${METAL_HOST} h-10 text-sm font-medium tabular-nums ${single ? 'w-10' : 'px-3'}`;
+  const numbersHost = `${METAL_HOST} h-10 text-sm font-medium tabular-nums ${single ? 'w-10' : 'px-2 sm:px-3'}`;
 
   return (
     <motion.div layoutId="flyby-root" className="flex items-center gap-2" transition={LAYOUT} style={SANS}>
@@ -87,7 +87,7 @@ export default function FlybyControl({
                   as="span"
                   key={scene.id}
                   value={scene}
-                  className="flex h-10 w-8 shrink-0 cursor-grab touch-none items-center justify-center active:cursor-grabbing"
+                  className="flex h-10 w-[22px] shrink-0 cursor-grab touch-none items-center justify-center active:cursor-grabbing sm:w-8"
                   whileDrag={{ scale: 1.15 }}
                 >
                   {/* Keep each scene's original number while dragging so you can see what moved. */}

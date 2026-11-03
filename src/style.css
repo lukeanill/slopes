@@ -105,13 +105,14 @@ body { margin: 0; background: var(--ink); font-family: 'DM Sans', sans-serif; }
 .status-slot {
   position: fixed; left: 50%; top: 16px; z-index: 6; /* top center, in line with search and About */
   transform: translateX(-50%);
-  display: flex; justify-content: center;
+  display: flex; justify-content: center; align-items: center;
+  height: 44px; /* same height as the search and About buttons so everything centers on one line */
   transition: opacity 0.25s ease, translate 0.35s cubic-bezier(0.22, 1, 0.36, 1), filter 0.2s ease;
 }
-/* On phones the top row (search, message, About) leaves no room in the middle, so messages and the
-   flyby control drop to a row of their own just below it. */
+/* On phones the status slot stays in the top row, squeezed between search (left) and About (right):
+   16px edge + 44px button + 8px gap on each side. */
 @media (max-width: 639px) {
-  .status-slot { top: 72px; max-width: calc(100vw - 32px); }
+  .status-slot { max-width: calc(100vw - 136px); }
   /* iPhones (Safari and Chrome alike) zoom the whole page into any field with text under 16px
      when it's tapped, and leave it zoomed — the map then looks cropped and the wrong size. */
   input, textarea, select { font-size: 16px !important; }
